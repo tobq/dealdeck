@@ -6,10 +6,12 @@ import { dealroomTools } from './dealroom.js';
 import { webTools } from './web.js';
 import { generateCoverImage } from './twoshot.js';
 import { emit, save, setBusy, nowIso, shortId, type Session } from './store.js';
-import { buildSystemPrompt, buildDeckKickoff, BULL_BEAR_KICKOFF, NARRATION_KICKOFF } from './prompts.js';
+import { buildSystemPrompt, buildDeckKickoff, BULL_BEAR_KICKOFF, NARRATION_KICKOFF, REVIEW_SYSTEM, buildReviewInput, buildReviewFix } from './prompts.js';
 import type { ChatMessage, Slide, SpeakVoice } from '../shared/types.js';
 
-const MAX_ROUNDS = 12;
+const MAX_ROUNDS = 26; // build = data rounds + one round per streamed slide
+const MAX_REVIEWS = 2;
+const COVER_TOKEN = '{{COVER_IMAGE}}';
 const KINDS = new Set<Slide['kind']>(['title', 'metrics', 'bullets', 'chart', 'table', 'people', 'compare', 'questions']);
 const VOICES = new Set<SpeakVoice>(['narrator', 'bull', 'bear']);
 
@@ -63,19 +65,22 @@ function normSlide(raw: any, s: Session, fallbackId?: string): Slide {
   }
   if (sl.kind === 'title' && s.deck.coverImage && !sl.image) sl.image = s.deck.coverImage;
   if (typeof sl.narration !== 'string') delete sl.narration;
+  if (typeof sl.html !== 'string' || !sl.html.trim()) delete sl.html;
+  else if (s.deck.coverImage) sl.html = sl.html.split(COVER_TOKEN).join(s.deck.coverImage);
   return sl as Slide;
 }
 
 // ---------- deck tools ----------
 const slideSchema = {
   type: 'object',
-  description: 'A Slide object (see the slide JSON guide in the system prompt). Must include kind, title, narration and receipts on every cited number.',
+  description: 'A Slide object: {id, kind, title, narration, html} (see the system prompt). Every number in html cites its receipt with data-r.',
   properties: {
     id: { type: 'string' },
     kind: { type: 'string', enum: [...KINDS] },
     title: { type: 'string' },
     subtitle: { type: 'string' },
     narration: { type: 'string' },
+    html: { type: 'string', description: 'The slide itself: self-contained HTML fragment for a 1920x1080 canvas (see the system prompt). Cite numbers with data-r="<receipt id>".' },
   },
   required: ['kind', 'title'],
 };
@@ -244,7 +249,11 @@ function statusLine(uses: ToolUseBlock[]): string {
     parts.add(hit ? hit[1] : u.name.replace(/_/g, ' '));
   }
   const list = [...parts];
-  if (list.length === 1 && list[0] === 'the deck') return 'Updating the deck...';
+  const ups = uses.filter((u) => u.name === 'upsert_slide');
+  if (list.length === 1 && list[0] === 'the deck') {
+    const t = ups.length === 1 ? String(parseMaybeJson(ups[0].input?.slide)?.title ?? '').trim() : '';
+    return t ? `Writing slide: ${t}...` : 'Updating the deck...';
+  }
   return `Pulling ${list.slice(0, 5).join(', ')}${list.length > 5 ? ` +${list.length - 5} more` : ''}...`;
 }
 
@@ -259,10 +268,61 @@ async function exclusive(s: Session, fn: () => Promise<void>): Promise<boolean> 
   return true;
 }
 
+// ---------- review loop (initial build only) ----------
+function receiptExcerpts(s: Session) {
+  const per = s.receipts.length > 30 ? 900 : 1600;
+  return s.receipts.map((r) => {
+    let j = '';
+    try { j = JSON.stringify(r.json); } catch { j = String(r.json); }
+    return { id: r.id, endpoint: r.endpoint, params: r.params, excerpt: (j ?? '').slice(0, per) };
+  });
+}
+
+function parseNotes(text: string): string[] {
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return [];
+  try {
+    const j = JSON.parse(m[0]);
+    return (Array.isArray(j?.notes) ? j.notes : []).map((n: any) => String(n ?? '').trim()).filter(Boolean).slice(0, 8);
+  } catch { return []; }
+}
+
+async function reviewDeck(s: Session): Promise<string[]> {
+  const slides = s.deck.slides.map((sl) => ({ id: sl.id, kind: sl.kind, title: sl.title, html: sl.html }));
+  const r = await cpMessage({
+    system: REVIEW_SYSTEM,
+    messages: [{ role: 'user', content: buildReviewInput(slides, receiptExcerpts(s)) }],
+    shardKey: `${s.deck.id}-review`,
+    maxTokens: 4000,
+  });
+  const text = r.content.filter((b) => b.type === 'text').map((b) => String(b.text ?? '')).join('');
+  return parseNotes(text);
+}
+
+async function reviewLoop(s: Session) {
+  for (let iteration = 1; iteration <= MAX_REVIEWS; iteration++) {
+    emit(s.deck.id, { type: 'status', text: iteration === 1 ? 'Reviewing the deck...' : 'Re-reviewing the deck...' });
+    let notes: string[];
+    try { notes = await reviewDeck(s); } catch (err: any) {
+      console.warn('[agent] review failed:', err?.message ?? err);
+      emit(s.deck.id, { type: 'review', iteration, notes: [], done: true });
+      return;
+    }
+    const done = !notes.length || iteration >= MAX_REVIEWS;
+    emit(s.deck.id, { type: 'review', iteration, notes, done });
+    if (done) return;
+    emit(s.deck.id, { type: 'status', text: `Applying ${notes.length} reviewer fix${notes.length === 1 ? '' : 'es'}...` });
+    await runTurn(s, buildReviewFix(notes), { chat: false });
+  }
+}
+
 // ---------- public API ----------
 function applyCover(s: Session, url: string) {
   s.deck.coverImage = url;
-  for (const sl of s.deck.slides) if (sl.kind === 'title' && !sl.image) sl.image = url;
+  for (const sl of s.deck.slides) {
+    if (sl.kind === 'title' && !sl.image) sl.image = url;
+    if (sl.html?.includes(COVER_TOKEN)) sl.html = sl.html.split(COVER_TOKEN).join(url);
+  }
   emit(s.deck.id, { type: 'deck', deck: s.deck });
   save(s);
 }
@@ -279,12 +339,16 @@ export async function startDeckBuild(s: Session): Promise<void> {
     }
     try {
       await runTurn(s, buildDeckKickoff(e, s.thesis), { chat: true });
-      if (!s.deck.slides.length) {
+      if (s.deck.slides.length < 3) {
         emit(s.deck.id, { type: 'status', text: 'Writing the deck...' });
-        await runTurn(s, 'You have not called set_deck yet. Call set_deck NOW with all slides, using only the data you already pulled (say "not disclosed" where data is missing).', { chat: false });
+        await runTurn(s, 'The deck is not finished. Write the remaining slides NOW, one upsert_slide per turn in order, using only the data you already pulled (say "not disclosed" where data is missing).', { chat: false });
       }
       s.deck.status = s.deck.slides.length ? 'ready' : 'error';
       if (!s.deck.slides.length) emit(s.deck.id, { type: 'error', message: 'The agent did not produce any slides.' });
+      else {
+        emit(s.deck.id, { type: 'deck', deck: s.deck });
+        await reviewLoop(s);
+      }
     } catch (err) {
       s.deck.status = 'error';
       throw err;

@@ -11,7 +11,7 @@ export const ttsUrl = (text: string, voice: SpeakVoice = 'narrator') =>
   `/api/tts?voice=${voice}&text=${encodeURIComponent(text.slice(0, 1800))}`;
 
 const queue: SpeechItem[] = [];
-let current: { item: SpeechItem; audio: HTMLAudioElement; done: () => void } | null = null;
+let current: { item: SpeechItem; audio: HTMLAudioElement; done: () => void; ended: Promise<void> } | null = null;
 let prefetched: { id: string; audio: HTMLAudioElement } | null = null;
 let muted = false;
 const listeners = new Set<(s: PlayerState) => void>();
@@ -45,7 +45,11 @@ function prefetchNext() {
 
 /** Play one clip now; resolves when it ends, errors, or is stopped. */
 function playItem(item: SpeechItem): Promise<void> {
-  return new Promise((resolve) => {
+  // Never two clips at once: whatever is playing is cut before the new one starts.
+  if (current) { const c = current; kill(c.audio); c.done(); }
+  let resolveEnded!: () => void;
+  const ended = new Promise<void>((r) => { resolveEnded = r; });
+  void new Promise<void>((resolve) => {
     const audio = audioFor(item);
     let settled = false;
     const done = () => {
@@ -54,14 +58,16 @@ function playItem(item: SpeechItem): Promise<void> {
       if (current?.audio === audio) current = null;
       notify();
       resolve();
+      resolveEnded();
     };
-    current = { item, audio, done };
+    current = { item, audio, done, ended };
     audio.onended = done;
     audio.onerror = () => { console.warn('[voice] tts playback failed for', item.id); done(); };
     notify();
     audio.play().catch((e) => { console.warn('[voice] play() refused', e?.message); done(); });
     prefetchNext();
   });
+  return ended;
 }
 
 let pumping = false;
@@ -69,7 +75,11 @@ async function pump() {
   if (pumping) return;
   pumping = true;
   try {
-    while (queue.length && !muted) await playItem(queue.shift()!);
+    while (queue.length && !muted) {
+      // A one-off clip (Present narration) is playing: queued speech waits for it instead of overlapping.
+      if (current) { await current.ended; continue; }
+      await playItem(queue.shift()!);
+    }
   } finally {
     pumping = false;
   }

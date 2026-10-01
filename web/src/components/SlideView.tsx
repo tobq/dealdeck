@@ -1,7 +1,8 @@
 // Renders any Slide kind on a fixed 1600x900 canvas scaled to its container (keynote-accurate at any size).
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts';
 import type { Deck, Slide } from '../../../shared/types';
+import { slideDoc } from '../lib/slideDoc';
 
 const W = 1600;
 const H = 900;
@@ -256,7 +257,7 @@ function Body({ slide, onCite, animate }: { slide: Slide; onCite: CiteFn; animat
   return null;
 }
 
-export default function SlideView({ slide, deck, onCite, thumb = false }: { slide: Slide; deck: Deck; onCite?: (receiptId: string) => void; thumb?: boolean }) {
+function StructuredSlide({ slide, deck, onCite, thumb = false }: { slide: Slide; deck: Deck; onCite?: (receiptId: string) => void; thumb?: boolean }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0);
   useLayoutEffect(() => {
@@ -291,4 +292,59 @@ export default function SlideView({ slide, deck, onCite, thumb = false }: { slid
       </div>
     </div>
   );
+}
+
+const HW = 1920;
+const HH = 1080;
+
+/** Expressive mode: the slide's own HTML in a sandboxed 1920x1080 iframe, scaled to the container width. */
+function HtmlSlide({ html, onCite, thumb }: { html: string; onCite?: (receiptId: string) => void; thumb: boolean }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [scale, setScale] = useState(0);
+  const doc = useMemo(() => slideDoc(html), [html]);
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const measure = () => setScale(el.clientWidth / HW);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const citeRef = useRef(onCite);
+  citeRef.current = onCite;
+  useEffect(() => {
+    if (thumb) return;
+    const onMsg = (e: MessageEvent) => {
+      if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
+      const d = e.data;
+      if (d && d.type === 'cite' && typeof d.r === 'string' && citeRef.current) citeRef.current(d.r);
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [thumb]);
+  return (
+    <div className={`slide-box ${thumb ? 'is-thumb' : ''}`} ref={boxRef}>
+      <div className="slide-canvas" style={{ width: HW, height: HH, transform: `scale(${scale})`, visibility: scale ? 'visible' : 'hidden' }}>
+        <iframe
+          ref={frameRef}
+          title="slide"
+          sandbox="allow-scripts"
+          srcDoc={doc}
+          width={HW}
+          height={HH}
+          scrolling="no"
+          tabIndex={thumb ? -1 : undefined}
+          style={{ display: 'block', width: HW, height: HH, border: 0, background: '#fff', pointerEvents: thumb ? 'none' : 'auto' }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Renders a slide: expressive HTML when present, else the structured keynote renderer (older decks). */
+export default function SlideView({ slide, deck, onCite, thumb = false }: { slide: Slide; deck: Deck; onCite?: (receiptId: string) => void; thumb?: boolean }) {
+  if (slide.html && slide.html.trim()) return <HtmlSlide html={slide.html} onCite={onCite} thumb={thumb} />;
+  return <StructuredSlide slide={slide} deck={deck} onCite={onCite} thumb={thumb} />;
 }

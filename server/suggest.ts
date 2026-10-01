@@ -8,7 +8,7 @@ import { nowIso, shortId, type Session } from './store.js';
 import type { SuggestBody, Suggestion, SuggestResponse } from '../shared/types.js';
 
 const MAX_ROUNDS = 6;
-const DEADLINE_MS = 20_000;
+const DEADLINE_MS = 35_000;
 const CACHE_MS = 3 * 60 * 60_000; // long: the demo pre-warms its thesis queries
 const cache = new Map<string, { at: number; res: Promise<SuggestResponse> }>();
 

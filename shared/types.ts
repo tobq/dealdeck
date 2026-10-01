@@ -46,6 +46,15 @@ export interface Slide {
   compare?: { left: { heading: string; points: Array<{ text: string } & Cited> }; right: { heading: string; points: Array<{ text: string } & Cited> } };
   image?: string; // hero/cover image url (title slide)
   narration?: string; // speaker notes for Present mode, 1-3 spoken sentences
+  /**
+   * Expressive mode (preferred): a self-contained HTML fragment for a 1920x1080 canvas, rendered in a
+   * sandboxed iframe on top of the base stylesheet (web/src/lib/slideDoc.ts: Inter, --accent #3b5bfd,
+   * --ink, --muted, --line, --good, --bad). Inline <style>/<svg> allowed; scripts only via
+   * <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script> + inline script. Citations: any
+   * element with data-r="r3" (e.g. <sup class="cite" data-r="r3">r3</sup>) opens that receipt.
+   * When html is present the structured fields above are optional.
+   */
+  html?: string;
 }
 
 export interface DeckEntity { uuid: string; kind: EntityKind; name: string; image?: string | null; tagline?: string | null; websiteDomain?: string | null }
@@ -87,6 +96,7 @@ export type DeckEvent =
   | { type: 'assistant_delta'; text: string } // streaming written answer
   | { type: 'chat'; message: ChatMessage } // a finished user or assistant message
   | { type: 'speak'; id: string; text: string; voice: SpeakVoice; interject?: boolean }
+  | { type: 'review'; iteration: number; notes: string[]; done: boolean } // reviewer loop progress
   | { type: 'error'; message: string };
 
 /** POST /api/decks body. `thesis` (optional) adds a "Thesis fit" slide to company decks. */
