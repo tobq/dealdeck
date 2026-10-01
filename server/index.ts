@@ -5,7 +5,7 @@ import { createServer as createViteServer } from 'vite';
 import type { ChatBody, CreateDeckBody, ImportBody, SuggestBody } from '../shared/types.js';
 import { createSession, emit, getSession, listRecent, subscribe, view } from './store.js';
 import { resolveDealroomUrl, searchEntities } from './dealroom.js';
-import { ensureNarration, handleChat, startDeckBuild } from './agent.js';
+import { cancelTurn, ensureNarration, handleChat, startDeckBuild } from './agent.js';
 import { runDebate } from './debate.js';
 import { generateFaq } from './faq.js';
 import { registerVoiceRoutes } from './voice.js';
@@ -121,6 +121,15 @@ app.post('/api/decks/:id/faq', h(async (req, res) => {
   res.status(202).json({ ok: true });
   generateFaq(s).catch((e) => { console.error('[faq]', s.deck.id, e); emit(s.deck.id, { type: 'error', message: "Couldn't write the FAQ, try again." }); });
 }));
+
+// Stop: drop any queued question and end the running turn at its next step (nothing more is spoken).
+app.post('/api/decks/:id/cancel', (req, res) => {
+  const s = getSession(req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  (s as any).pendingChat = undefined;
+  cancelTurn(s);
+  res.json({ ok: true });
+});
 
 app.post('/api/decks/:id/fork', h(async (req, res) => {
   const s = getSession(req.params.id);

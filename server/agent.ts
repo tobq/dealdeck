@@ -176,6 +176,7 @@ const deckTools: ToolDef[] = [
       const text = String(input.text ?? '').trim();
       if (!text) throw new Error('text is empty');
       const voice: SpeakVoice = VOICES.has(input.voice) ? input.voice : 'narrator';
+      if (isCancelled(s)) return 'not spoken: the viewer pressed stop';
       emit(s.deck.id, { type: 'speak', id: shortId(8), text, voice });
       const list = spokenThisTurn.get(s.deck.id);
       if (list) list.push(voice === 'narrator' ? text : `${voice}: ${text}`);
@@ -254,6 +255,12 @@ async function runTurn(s: Session, userText: string, opts: TurnOpts): Promise<st
       save(s);
       const toolUses = content.filter((b) => b.type === 'tool_use') as unknown as ToolUseBlock[];
       if (!toolUses.length) break; // stop_reason end_turn / max_tokens with no calls
+      if (isCancelled(s)) {
+        // The viewer pressed stop: answer every tool_use (the API requires it) and end the turn.
+        s.messages.push({ role: 'user', content: toolUses.map((u) => ({ type: 'tool_result', tool_use_id: u.id, content: 'Cancelled: the viewer pressed stop.', is_error: true })) });
+        save(s);
+        break;
+      }
       // set_status (the model's own line) wins over the generic tool summary.
       const line = toolUses.some((u) => u.name === 'set_status') ? '' : statusLine(toolUses);
       if (line) ctx.status(line);
@@ -436,18 +443,45 @@ function slideNote(s: Session, slideIndex?: number): string {
   return `(The viewer is on slide ${slideIndex! + 1} of ${n}: '${sl.title}' (id ${sl.id}). 'this slide' means that one. Its content: ${extract})\n`;
 }
 
+// ---------- stop / cancel ----------
+const cancelled = new WeakSet<Session>();
+const isCancelled = (s: Session) => cancelled.has(s);
+/** The viewer pressed stop: the running turn ends at its next step and speaks nothing more. */
+export function cancelTurn(s: Session) { if (s.busy) cancelled.add(s); }
+
+/**
+ * Everything the viewer can see, as compact text: every slide, the debate and the FAQ. Injected into the
+ * thread whenever it changed since the analyst last saw it, so the one conversation always knows the
+ * current deck (edits included) and `show` can target any page or slide accurately.
+ */
+function deckMap(s: Session): string {
+  const slides = s.deck.slides.map((sl, i) => `${i + 1}. [${sl.id}] ${sl.title}: ${slideText(sl).slice(0, 240)}`).join('\n');
+  const debate = s.deck.debate?.length ? s.deck.debate.map((l) => `${l.side.toUpperCase()}: ${l.text}`).join('\n') : '(not run yet)';
+  const faq = s.deck.faq?.length ? s.deck.faq.map((f, i) => `${i + 1}. Q: ${f.q}\n   A: ${f.a.slice(0, 260)}`).join('\n') : '(not written yet)';
+  return `DECK MAP (what the viewer can see now; use show {slide: N} or show {page} to take them there)\nPRESENTATION (${s.deck.slides.length} slides):\n${slides}\nARGUMENTS (Bull vs Bear):\n${debate}\nFAQ:\n${faq}`;
+}
+const lastMap = new WeakMap<Session, string>();
+function deckMapNote(s: Session): string {
+  const map = deckMap(s);
+  if (lastMap.get(s) === map) return '';
+  lastMap.set(s, map);
+  return `(${map})\n`;
+}
+
 /** Where the viewer is: one analyst thread across Presentation, Arguments and FAQ, so 'this' / 'that point' resolve. */
 function viewNote(s: Session, opts: { slideIndex?: number; view?: string; focus?: string }): string {
   const focus = opts.focus ? ` They last focused on ${opts.focus}.` : '';
-  if (opts.view === 'arguments') return `(The viewer is on the Arguments page: the Bull vs Bear debate.${focus} 'that point' refers to it.)\n`;
-  if (opts.view === 'faq') return `(The viewer is on the FAQ page.${focus})\n`;
-  return slideNote(s, opts.slideIndex) + (focus ? `(${focus.trim()})\n` : '');
+  const map = deckMapNote(s);
+  if (opts.view === 'arguments') return `${map}(The viewer is on the Arguments page: the Bull vs Bear debate.${focus} 'that point' refers to it.)\n`;
+  if (opts.view === 'faq') return `${map}(The viewer is on the FAQ page.${focus})\n`;
+  return map + slideNote(s, opts.slideIndex) + (focus ? `(${focus.trim()})\n` : '');
 }
 
 export async function handleChat(s: Session, text: string, opts: { voice?: boolean; slideIndex?: number; view?: string; focus?: string } = {}): Promise<void> {
   const t = String(text ?? '').trim();
   if (!t) return;
   await exclusive(s, async () => {
+    cancelled.delete(s); // a new question starts un-cancelled
     const user: ChatMessage = { id: shortId(8), role: 'user', text: t, at: nowIso() };
     s.chat.push(user);
     emit(s.deck.id, { type: 'chat', message: user });

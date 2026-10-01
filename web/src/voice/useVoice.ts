@@ -179,7 +179,14 @@ export function useVoice(deckId: string, getSlideIndex?: () => number) {
     }
   }, [commitText]);
 
-  const toggleMic = useCallback(() => { if (teardown.current) teardown.current(); else void start(); }, [start]);
+  // Stopping the mic is "stop": end the speech and cancel the in-flight or queued answer too.
+  const toggleMic = useCallback(() => {
+    if (!teardown.current) { void start(); return; }
+    teardown.current();
+    player.stop();
+    setThinking(false);
+    void fetch('/api/decks/' + deckRef.current + '/cancel', { method: 'POST' }).catch(() => {});
+  }, [start]);
   const toggleMute = useCallback(() => player.setMuted(!player.isMuted()), []);
 
   const state: VoiceState = !micOn ? (speaking ? 'speaking' : 'idle') : speaking ? 'speaking' : thinking ? 'thinking' : 'listening';
