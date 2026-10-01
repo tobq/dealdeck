@@ -349,11 +349,13 @@ export async function startDeckBuild(s: Session): Promise<void> {
         emit(s.deck.id, { type: 'status', text: 'Writing the deck...' });
         await runTurn(s, 'The deck is not finished. Write the remaining slides NOW, one upsert_slide per turn in order, using only the data you already pulled (say "not disclosed" where data is missing).', { chat: false });
       }
-      s.deck.status = s.deck.slides.length ? 'ready' : 'error';
-      if (!s.deck.slides.length) emit(s.deck.id, { type: 'error', message: 'The agent did not produce any slides.' });
-      else {
-        emit(s.deck.id, { type: 'deck', deck: s.deck });
+      if (!s.deck.slides.length) {
+        s.deck.status = 'error';
+        emit(s.deck.id, { type: 'error', message: 'The agent did not produce any slides.' });
+      } else {
+        // Stay 'building' through the review loop: the player shows the loading screen until reviewed.
         await reviewLoop(s);
+        s.deck.status = 'ready';
       }
     } catch (err) {
       s.deck.status = 'error';

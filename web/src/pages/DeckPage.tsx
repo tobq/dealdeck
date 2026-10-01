@@ -21,19 +21,21 @@ const Ico = {
   edit: <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>,
 };
 
-function Skeleton({ statusLog, name }: { statusLog: string[]; name: string }) {
+function Skeleton({ statusLog, name, slidesDone = 0 }: { statusLog: string[]; name: string; slidesDone?: number }) {
+  // Only the latest few steps: the full log scrolls off a projector.
+  const shown = statusLog.slice(-6);
   return (
     <div className="skeleton-stage">
       <div className="slide-box skeleton-box">
         <div className="sk-inner">
-          <div className="sk-eyebrow">Building your deck</div>
+          <div className="sk-eyebrow">Building your deck{slidesDone ? ` · ${slidesDone} slide${slidesDone === 1 ? '' : 's'} written` : ''}</div>
           <div className="sk-title">{name}</div>
           <div className="sk-lines"><i /><i /><i /></div>
           <ul className="sk-status">
-            {statusLog.length === 0 && <li className="current"><span className="spinner spinner-xs" />Starting the analyst...</li>}
-            {statusLog.map((s, i) => (
-              <li key={i + s} className={i === statusLog.length - 1 ? 'current' : 'done'}>
-                {i === statusLog.length - 1 ? <span className="spinner spinner-xs" /> : <span className="tick" />}
+            {shown.length === 0 && <li className="current"><span className="spinner spinner-xs" />Starting the analyst...</li>}
+            {shown.map((s, i) => (
+              <li key={i + s} className={i === shown.length - 1 ? 'current' : 'done'}>
+                {i === shown.length - 1 ? <span className="spinner spinner-xs" /> : <span className="tick" />}
                 {s}
               </li>
             ))}
@@ -96,12 +98,13 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
       </header>
 
       <main className="pl-stage">
-        {slide ? (
+        {/* The reviewer may still rewrite slides, so the player stays on the loading screen until the deck is ready. */}
+        {slide && !building ? (
           <div className="pl-slide" key={slide.id}>
             <SlideView slide={slide} deck={deck} onCite={onCite} />
           </div>
         ) : (
-          <Skeleton statusLog={statusLog} name={deck.entity.name} />
+          <Skeleton statusLog={review ? [...statusLog, review] : statusLog} name={deck.entity.name} slidesDone={slides.length} />
         )}
         {playing && slide?.narration && !caption && <p className="pl-narration">{slide.narration}</p>}
         {(caption || (asked && busy)) && (
