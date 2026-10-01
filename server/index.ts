@@ -5,7 +5,8 @@ import { createServer as createViteServer } from 'vite';
 import type { ChatBody, CreateDeckBody, ImportBody, SuggestBody } from '../shared/types.js';
 import { createSession, getSession, listRecent, subscribe, view } from './store.js';
 import { resolveDealroomUrl, searchEntities } from './dealroom.js';
-import { ensureNarration, handleChat, runBullBear, startDeckBuild } from './agent.js';
+import { ensureNarration, handleChat, startDeckBuild } from './agent.js';
+import { runDebate } from './debate.js';
 import { registerVoiceRoutes } from './voice.js';
 import { registerShareRoutes } from './share.js';
 import { suggestCompanies } from './suggest.js';
@@ -104,7 +105,7 @@ app.post('/api/decks/:id/bullbear', h(async (req, res) => {
   if (!s) return res.status(404).json({ error: 'not found' });
   if (s.busy) return res.status(409).json({ error: 'busy' });
   res.status(202).json({ ok: true });
-  runBullBear(s).catch((e) => console.error('[bullbear]', s.deck.id, e));
+  runDebate(s).catch((e) => console.error('[bullbear]', s.deck.id, e));
 }));
 
 app.post('/api/decks/:id/narrate', h(async (req, res) => {

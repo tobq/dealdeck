@@ -149,6 +149,9 @@ export async function resolveDealroomUrl(url: string): Promise<{ uuid: string; k
 // ---------- trimming ----------
 const MAX_ITEMS = 25;
 const MAX_STR = 600;
+const NESTED_ITEMS = 6;
+const NESTED_STR = 160;
+const NESTED_DROP = new Set(['about', 'description', 'long_description', 'tagline', 'website', 'linkedin', 'twitter', 'path', 'url', 'dealroom_url']);
 const DROP_KEYS = new Set(['locked', 'created_at', 'deleted_at', 'updated_at', 'images', 'image_urls', 'svg', 'logo_svg', 'lat', 'lon', 'latitude', 'longitude',
   'angellist', 'crunchbase', 'facebook', 'instagram', 'youtube', 'city_unique_id', 'state_unique_id', 'country_unique_id', 'continent_unique_id', 'city_region_unique_ids', 'next_cursor']);
 const IMAGE_KEY = /^(image|logo|avatar|photo|picture|icon|thumbnail)(_url)?$/i;
@@ -165,21 +168,26 @@ function compactLocation(l: any): unknown {
 /** Keep decision-useful content: drop nulls/empties/noise keys, cap arrays at 25 and strings at 600 chars. */
 export function trim(v: unknown, depth = 0): unknown {
   if (v === null || v === undefined) return undefined;
+  // Nested entities (an investor's portfolio inside an investors row, etc.) are context, not the subject:
+  // keep them short so one section does not cost 60KB on every model turn.
+  const nested = depth >= 3;
   if (typeof v === 'string') {
     const t = HTML_TAG.test(v) ? stripHtml(v) : v;
-    return t.length > MAX_STR ? t.slice(0, MAX_STR) + '...' : t;
+    const max = nested ? NESTED_STR : MAX_STR;
+    return t.length > max ? t.slice(0, max) + '...' : t;
   }
   if (typeof v !== 'object') return v;
   if (depth > 7) return undefined;
   if (Array.isArray(v)) {
-    const items = v.slice(0, MAX_ITEMS).map((x) => trim(x, depth + 1)).filter((x) => x !== undefined);
+    const cap = nested ? NESTED_ITEMS : MAX_ITEMS;
+    const items = v.slice(0, cap).map((x) => trim(x, depth + 1)).filter((x) => x !== undefined);
     if (!items.length) return undefined;
-    if (v.length > MAX_ITEMS) items.push(`...${v.length - MAX_ITEMS} more`);
+    if (v.length > cap) items.push(`...${v.length - cap} more`);
     return items;
   }
   const out: Record<string, unknown> = {};
   for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
-    if (DROP_KEYS.has(k)) continue;
+    if (DROP_KEYS.has(k) || (nested && NESTED_DROP.has(k))) continue;
     if (IMAGE_KEY.test(k) && typeof x === 'string') { const u = imageUrl(x); if (u) out[k] = u; continue; }
     const t = trim((k === 'locations' || k === 'location') ? (Array.isArray(x) ? x.map(compactLocation) : compactLocation(x)) : x, depth + 1);
     if (t === undefined) continue;
