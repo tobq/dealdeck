@@ -5,6 +5,7 @@ import { runToolBatch, toAnthropicTools, type ToolDef, type ToolUseBlock } from 
 import { dealroomTools } from './dealroom.js';
 import { webTools } from './web.js';
 import { generateCoverImage } from './twoshot.js';
+import { screenshotSlides, toImageBlocks } from './screenshot.js';
 import { emit, save, setBusy, nowIso, shortId, type Session } from './store.js';
 import { buildSystemPrompt, buildDeckKickoff, BULL_BEAR_KICKOFF, NARRATION_KICKOFF, REVIEW_SYSTEM, buildReviewInput, buildReviewFix } from './prompts.js';
 import type { ChatMessage, Slide, SpeakVoice } from '../shared/types.js';
@@ -289,9 +290,14 @@ function parseNotes(text: string): string[] {
 
 async function reviewDeck(s: Session): Promise<string[]> {
   const slides = s.deck.slides.map((sl) => ({ id: sl.id, kind: sl.kind, title: sl.title, html: sl.html }));
+  // The reviewer also SEES the deck: rendered 960x540 screenshots, so it can judge cohesion and layout.
+  const shots = await screenshotSlides(s.deck.slides).catch((err) => { console.warn('[agent] screenshots failed:', err?.message ?? err); return []; });
+  const visual = shots.length
+    ? '\n\nRendered screenshots of the slides are attached above. Also judge them VISUALLY as one deck: cohesive type scale, spacing, alignment and colour across slides; any text overflow, clipping or overlap; unreadable or empty charts; cramped or unbalanced layouts. Name the slide id for every visual note.'
+    : '';
   const r = await cpMessage({
     system: REVIEW_SYSTEM,
-    messages: [{ role: 'user', content: buildReviewInput(slides, receiptExcerpts(s)) }],
+    messages: [{ role: 'user', content: [...toImageBlocks(shots), { type: 'text', text: buildReviewInput(slides, receiptExcerpts(s)) + visual }] }],
     shardKey: `${s.deck.id}-review`,
     maxTokens: 4000,
   });
