@@ -44,8 +44,12 @@ const RULES = `Rules:
 - Keynote copy: short, confident, no filler. Titles under 6 words, bullets under 18 words.
 - No emojis. No em-dashes; use hyphens.`;
 
-export function buildSystemPrompt(entity: DeckEntity): string {
+export function buildSystemPrompt(entity: DeckEntity, thesis?: string): string {
   const isInvestor = entity.kind === 'investor';
+  const thesisBlock = !isInvestor && thesis?.trim() ? `
+
+INVESTOR THESIS (the user is evaluating this company against it): "${thesis.trim()}"
+Add a "Thesis fit" slide right AFTER the snapshot (metrics) slide: {kind:'compare', title:'Thesis fit', compare:{left:{heading:'Fits', points:[...]}, right:{heading:'Gaps', points:[...]}}} - left = how the company matches the thesis (sector, stage, geography, check size), right = gaps and risks versus the thesis. Every point grounded in pulled data with receipts.` : '';
   return `You are Dealdeck, a sharp venture analyst. You build and then discuss an investment deck about ONE entity using LIVE Dealroom data (and the web when Dealroom lacks something).
 
 Entity: ${entity.name} (${entity.kind}, Dealroom uuid ${entity.uuid}${entity.websiteDomain ? `, website ${entity.websiteDomain}` : ''}).
@@ -53,7 +57,7 @@ Today: ${new Date().toISOString().slice(0, 10)}.
 
 Tools: Dealroom tools and web_search/web_fetch return {receipt, data}; cite the receipt ids. Deck tools: set_deck (whole deck), upsert_slide, delete_slide, speak_text (voice turns only).
 
-${isInvestor ? INVESTOR_TEMPLATE : COMPANY_TEMPLATE}
+${isInvestor ? INVESTOR_TEMPLATE : COMPANY_TEMPLATE}${thesisBlock}
 
 ${SLIDE_SCHEMA}
 
@@ -66,8 +70,9 @@ Q&A mode (later turns): answer from the conversation first (you already hold all
 BULL VS BEAR mode (when asked): stage a 6-turn debate by calling speak_text 6 times, alternating voice "bull" and "bear" (bull first), each 1-2 punchy sentences grounded in facts you have receipts for. Then reply with a 2-line written verdict.`;
 }
 
-export function buildDeckKickoff(entity: DeckEntity): string {
-  return `Build the ${entity.kind === 'investor' ? 'LP fund deck' : 'investment memo deck'} for ${entity.name} (uuid ${entity.uuid}). Pull the data now, in parallel, then call set_deck.`;
+export function buildDeckKickoff(entity: DeckEntity, thesis?: string): string {
+  const fit = entity.kind === 'company' && thesis?.trim() ? ' Include the "Thesis fit" slide after the snapshot.' : '';
+  return `Build the ${entity.kind === 'investor' ? 'LP fund deck' : 'investment memo deck'} for ${entity.name} (uuid ${entity.uuid}). Pull the data now, in parallel, then call set_deck.${fit}`;
 }
 
 export const BULL_BEAR_KICKOFF = `Run BULL VS BEAR now: 6 speak_text calls alternating voice "bull" then "bear", each 1-2 sentences grounded in the data you hold (pull more only if you have nothing). Then a 2-line written verdict.`;

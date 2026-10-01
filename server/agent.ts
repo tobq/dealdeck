@@ -186,7 +186,7 @@ async function runTurn(s: Session, userText: string, opts: TurnOpts): Promise<st
   const deckId = s.deck.id;
   const tools = allTools();
   const apiTools = toAnthropicTools(tools);
-  const system = buildSystemPrompt(s.deck.entity);
+  const system = buildSystemPrompt(s.deck.entity, s.thesis);
   const ctx = { session: s, status: (text: string) => emit(deckId, { type: 'status', text }) };
   spokenThisTurn.set(deckId, []);
   let written = '';
@@ -278,7 +278,7 @@ export async function startDeckBuild(s: Session): Promise<void> {
       generateCoverImage(prompt).then((url) => { if (url) applyCover(s, url); }).catch((err) => console.warn('[agent] cover failed:', err?.message ?? err));
     }
     try {
-      await runTurn(s, buildDeckKickoff(e), { chat: true });
+      await runTurn(s, buildDeckKickoff(e, s.thesis), { chat: true });
       if (!s.deck.slides.length) {
         emit(s.deck.id, { type: 'status', text: 'Writing the deck...' });
         await runTurn(s, 'You have not called set_deck yet. Call set_deck NOW with all slides, using only the data you already pulled (say "not disclosed" where data is missing).', { chat: false });

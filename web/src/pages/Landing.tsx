@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck, SearchHit } from '../../../shared/types';
 import { api, createDeckByName, createDeckFromHit, navigate } from '../lib/api';
+import ThesisPanel from '../components/ThesisPanel';
 
 const EXAMPLES = ['Synthesia', 'Wayve', 'LocalGlobe'];
 
@@ -151,6 +152,7 @@ export default function Landing() {
           </div>
         )}
         {error && <p className="error-line">{error}</p>}
+        <ThesisPanel disabled={!!creating} />
       </main>
 
       {recent.length > 0 && (

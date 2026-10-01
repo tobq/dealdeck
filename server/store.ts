@@ -16,6 +16,8 @@ export interface Session {
   receipts: Receipt[];
   messages: ApiMessage[]; // full agent conversation incl. tool_use / tool_result / thinking blocks
   busy: boolean;
+  thesis?: string; // optional investment thesis: company decks get a "Thesis fit" slide
+  ephemeral?: boolean; // throwaway (e.g. /api/suggest): never written to disk
 }
 
 const cache = new Map<string, Session>();
@@ -67,6 +69,7 @@ export function getSession(id: string): Session | null {
 let saveTimers = new Map<string, NodeJS.Timeout>();
 /** Debounced atomic write. */
 export function save(s: Session) {
+  if (s.ephemeral) return;
   s.deck.updatedAt = nowIso();
   clearTimeout(saveTimers.get(s.deck.id));
   saveTimers.set(s.deck.id, setTimeout(() => {

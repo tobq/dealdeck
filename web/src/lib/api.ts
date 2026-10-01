@@ -1,6 +1,6 @@
 // Typed fetch helpers for every Dealdeck API route.
 import type {
-  ChatBody, CreateDeckBody, Deck, DeckView, EntityKind, ImportBody, Receipt, SearchHit, ShareInfo,
+  ChatBody, CreateDeckBody, Deck, DeckView, EntityKind, ImportBody, Receipt, SearchHit, ShareInfo, SuggestBody, SuggestResponse,
 } from '../../../shared/types';
 
 async function req<T>(method: string, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -35,6 +35,7 @@ export const api = {
   bullbear: (id: string) => req<unknown>('POST', `/api/decks/${encodeURIComponent(id)}/bullbear`, {}),
   narrate: (id: string) => req<unknown>('POST', `/api/decks/${encodeURIComponent(id)}/narrate`, {}),
   recent: () => req<Deck[]>('GET', '/api/recent'),
+  suggest: (body: SuggestBody, signal?: AbortSignal) => req<SuggestResponse>('POST', '/api/suggest', body, signal),
   share: (deckId: string) => req<ShareInfo>('POST', '/api/share', { deckId }),
   sttToken: () => req<{ token: string }>('GET', '/api/stt-token'),
   ttsUrl: '/api/tts',

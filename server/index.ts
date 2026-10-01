@@ -2,12 +2,13 @@
 import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import type { ChatBody, CreateDeckBody, ImportBody } from '../shared/types.js';
+import type { ChatBody, CreateDeckBody, ImportBody, SuggestBody } from '../shared/types.js';
 import { createSession, getSession, listRecent, subscribe, view } from './store.js';
 import { resolveDealroomUrl, searchEntities } from './dealroom.js';
 import { ensureNarration, handleChat, runBullBear, startDeckBuild } from './agent.js';
 import { registerVoiceRoutes } from './voice.js';
 import { registerShareRoutes } from './share.js';
+import { suggestCompanies } from './suggest.js';
 
 // A stray rejection/throw in a background task (cover art, tunnel, tool) must not take the demo down.
 process.on('unhandledRejection', (e: any) => console.error('[unhandledRejection]', e?.stack ?? e));
@@ -30,14 +31,25 @@ app.get('/api/search', h(async (req, res) => {
 
 function startBuild(entity: CreateDeckBody & { image?: string | null; tagline?: string | null; websiteDomain?: string | null }) {
   const s = createSession({ uuid: entity.uuid, kind: entity.kind, name: entity.name, image: entity.image ?? null, tagline: entity.tagline ?? null, websiteDomain: entity.websiteDomain ?? null });
+  const thesis = typeof entity.thesis === 'string' ? entity.thesis.trim().slice(0, 2000) : '';
+  if (thesis) s.thesis = thesis;
   startDeckBuild(s).catch((e) => console.error('[build]', s.deck.id, e));
   return s;
 }
 
 app.post('/api/decks', h(async (req, res) => {
   const b = req.body as CreateDeckBody & { image?: string; tagline?: string; websiteDomain?: string };
-  if (!b?.uuid || !b?.name || (b.kind !== 'company' && b.kind !== 'investor')) return res.status(400).json({ error: 'uuid, name, kind required' });
-  res.json({ id: startBuild(b).deck.id });
+  if (!b?.name || (b.kind !== 'company' && b.kind !== 'investor')) return res.status(400).json({ error: 'name, kind required' });
+  // A pick without a Dealroom id (web-sourced suggestion) gets a sentinel; the agent resolves it via dealroom_search.
+  res.json({ id: startBuild({ ...b, uuid: b.uuid || 'unknown - look it up with dealroom_search by name' }).deck.id });
+}));
+
+app.post('/api/suggest', h(async (req, res) => {
+  const b = (req.body ?? {}) as SuggestBody;
+  const thesis = typeof b.thesis === 'string' ? b.thesis.trim().slice(0, 2000) : '';
+  const fundUuid = typeof b.fundUuid === 'string' ? b.fundUuid.trim() : '';
+  if (!thesis && !fundUuid) return res.status(400).json({ error: 'thesis or fundUuid required' });
+  res.json(await suggestCompanies({ thesis: thesis || undefined, fundUuid: fundUuid || undefined, fundName: typeof b.fundName === 'string' ? b.fundName : undefined, limit: b.limit }));
 }));
 
 app.post('/api/import', h(async (req, res) => {

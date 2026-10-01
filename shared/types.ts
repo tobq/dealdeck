@@ -89,8 +89,25 @@ export type DeckEvent =
   | { type: 'speak'; id: string; text: string; voice: SpeakVoice; interject?: boolean }
   | { type: 'error'; message: string };
 
-/** POST /api/decks body */
-export interface CreateDeckBody { uuid: string; kind: EntityKind; name: string }
+/** POST /api/decks body. `thesis` (optional) adds a "Thesis fit" slide to company decks. */
+export interface CreateDeckBody { uuid: string; kind: EntityKind; name: string; thesis?: string }
+
+/** POST /api/suggest body: a free-text thesis and/or the user's own fund (investor uuid). */
+export interface SuggestBody { thesis?: string; fundUuid?: string; fundName?: string; limit?: number }
+export interface Suggestion {
+  uuid: string;
+  kind: EntityKind; // always 'company' today
+  name: string;
+  image: string | null;
+  tagline: string | null;
+  hqCity: string | null;
+  hqCountry: string | null;
+  lastRound: string | null; // e.g. "$12M Series A, Mar 2026"
+  why: string; // one sentence: why it fits the thesis
+  receipts?: string[];
+}
+/** POST /api/suggest response (takes ~10-30s; the UI shows a progress state). */
+export interface SuggestResponse { thesisSummary: string; suggestions: Suggestion[] }
 /** POST /api/import body: any Dealroom URL or path, e.g. "app.dealroom.co/companies/synthesia" */
 export interface ImportBody { url: string }
 /** POST /api/decks/:id/chat body */
