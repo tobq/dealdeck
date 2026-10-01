@@ -72,4 +72,4 @@ export function buildDeckKickoff(entity: DeckEntity): string {
 
 export const BULL_BEAR_KICKOFF = `Run BULL VS BEAR now: 6 speak_text calls alternating voice "bull" then "bear", each 1-2 sentences grounded in the data you hold (pull more only if you have nothing). Then a 2-line written verdict.`;
 
-export const NARRATION_KICKOFF = `Some slides are missing "narration". For each such slide call upsert_slide with the same slide (same id and index) plus narration (1-3 spoken sentences). Do not change anything else.`;
+export const NARRATION_KICKOFF = `Some slides are missing "narration". For each such slide call upsert_slide with slide = {id, narration} only (same id; the server merges it onto the existing slide), all calls in ONE parallel turn. Narration = 1-3 spoken sentences in plain words, using only facts already on that slide. Do not change anything else.`;

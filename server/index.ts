@@ -9,6 +9,10 @@ import { ensureNarration, handleChat, runBullBear, startDeckBuild } from './agen
 import { registerVoiceRoutes } from './voice.js';
 import { registerShareRoutes } from './share.js';
 
+// A stray rejection/throw in a background task (cover art, tunnel, tool) must not take the demo down.
+process.on('unhandledRejection', (e: any) => console.error('[unhandledRejection]', e?.stack ?? e));
+process.on('uncaughtException', (e: any) => console.error('[uncaughtException]', e?.stack ?? e));
+
 const PORT = Number(process.env.PORT || 5178);
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -77,6 +81,8 @@ app.post('/api/decks/:id/chat', h(async (req, res) => {
 app.post('/api/decks/:id/fork', h(async (req, res) => {
   const s = getSession(req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
+  // Forking mid-turn would clone a 'building' deck and a half-finished tool loop that nothing will finish.
+  if (s.busy) return res.status(409).json({ error: 'busy' });
   const f = createSession(s.deck.entity, s);
   res.json({ id: f.deck.id });
 }));

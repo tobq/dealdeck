@@ -25,7 +25,8 @@ function upsertSlide(slides: Slide[], slide: Slide, index: number): Slide[] {
 export function applyEvent(st: DeckState, e: DeckEvent): DeckState {
   switch (e.type) {
     case 'snapshot':
-      return { ...st, view: e.view, error: null };
+      // A reconnect snapshot is authoritative: drop stale streaming/status when no turn is running.
+      return e.view.busy ? { ...st, view: e.view, error: null } : { ...st, view: e.view, error: null, streaming: '', status: null };
     case 'deck':
       return st.view ? { ...st, view: { ...st.view, deck: e.deck } } : st;
     case 'slide':

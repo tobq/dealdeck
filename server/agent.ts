@@ -105,14 +105,15 @@ const deckTools: ToolDef[] = [
   },
   {
     name: 'upsert_slide',
-    description: 'Insert or replace ONE slide. Same id = replace in place (or move if index given). New id = insert at index (default: end).',
+    description: 'Insert or update ONE slide. Same id = update in place, merging the fields you send onto the existing slide (or move if index given). New id = insert at index (default: end).',
     input_schema: { type: 'object', properties: { index: { type: 'integer', description: '0-based position' }, slide: slideSchema }, required: ['slide'] },
     async run(input, ctx) {
       const s = ctx.session;
       const slides = s.deck.slides;
       const raw = parseMaybeJson(input.slide);
       const existingIdx = raw?.id ? slides.findIndex((x) => x.id === raw.id) : -1;
-      const slide = normSlide(raw, s);
+      // Same id = merge onto the existing slide, so a partial update ({id, narration}) never wipes its content.
+      const slide = normSlide(existingIdx >= 0 && raw && typeof raw === 'object' ? { ...slides[existingIdx], ...raw } : raw, s);
       const want = Number.isInteger(input.index) ? Math.max(0, Math.min(input.index, slides.length)) : null;
       let index: number;
       if (existingIdx >= 0 && (want === null || want === existingIdx)) {

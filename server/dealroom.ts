@@ -29,6 +29,7 @@ function proxyDispatcher(): Promise<unknown | null> {
 
 async function drFetch(url: string, init: RequestInit): Promise<Response> {
   const dispatcher = await proxyDispatcher();
+  init = { signal: AbortSignal.timeout(30_000), ...init }; // a hung call would wedge the turn (busy stuck true)
   return fetch(url, dispatcher ? ({ ...init, dispatcher } as RequestInit) : init);
 }
 
@@ -107,13 +108,23 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
 /** "app.dealroom.co/companies/<slug>", "/investors/<slug>", full urls -> best matching entity. */
 export async function resolveDealroomUrl(url: string): Promise<{ uuid: string; kind: EntityKind; name: string; image?: string | null; tagline?: string | null } | null> {
-  const m = /(?:^|\/)(companies|investors)\/([^/?#\s]+)/i.exec(decodeURIComponent(url.trim()));
+  let raw = String(url ?? '').trim();
+  try { raw = decodeURIComponent(raw); } catch { /* malformed %-escape: match the raw text */ }
+  const m = /(?:^|\/)(companies|investors)\/([^/?#\s]+)/i.exec(raw);
   if (!m) return null;
   const kind: EntityKind = m[1].toLowerCase() === 'investors' ? 'investor' : 'company';
   const slug = m[2].toLowerCase();
   const words = slug.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
-  let hits = await searchEntities(words, kind);
-  if (!hits.length && words.includes(' ')) hits = await searchEntities(words.split(' ')[0], kind);
+  let hits: SearchHit[];
+  try {
+    hits = await searchEntities(words, kind);
+    if (!hits.length && words.includes(' ')) hits = await searchEntities(words.split(' ')[0], kind);
+  } catch (e) {
+    // Dealroom unreachable (network block / token): build from the URL's own slug so the agent can still
+    // research the entity (it falls back to the web). The slug is the user's input, not invented data.
+    console.warn(`[dealroom] resolve "${slug}" via search failed (${(e as Error).message}); using the URL slug`);
+    return { uuid: slug, kind, name: words.replace(/\b[a-z]/g, (c) => c.toUpperCase()), image: null, tagline: null };
+  }
   const typed = hits.filter((h) => h.type === kind);
   if (!typed.length) return null;
   const target = norm(slug);

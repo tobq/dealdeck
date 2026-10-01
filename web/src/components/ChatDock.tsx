@@ -10,6 +10,20 @@ const SpeakerIcon = ({ off }: { off: boolean }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h4l5-4v14l-5-4H4z" />{off ? <path d="M17 9l5 6M22 9l-5 6" /> : <path d="M17 8a5 5 0 0 1 0 8M19.5 5.5a9 9 0 0 1 0 13" />}</svg>
 );
 
+/** Minimal markdown for chat bubbles: **bold** and "- " bullets, so model replies do not show raw asterisks. */
+function Md({ text }: { text: string }) {
+  return (
+    <>
+      {text.split('\n').map((line, i, all) => {
+        const bullet = /^\s*[-*]\s+/.test(line);
+        const body = bullet ? line.replace(/^\s*[-*]\s+/, '') : line;
+        const parts = body.split(/(\*\*[^*]+\*\*)/g).map((p, j) => (/^\*\*[^*]+\*\*$/.test(p) ? <strong key={j}>{p.slice(2, -2)}</strong> : p));
+        return <span key={i}>{bullet ? '• ' : ''}{parts}{i < all.length - 1 ? '\n' : ''}</span>;
+      })}
+    </>
+  );
+}
+
 const LABEL = { idle: 'Mic off', listening: 'Listening', thinking: 'Thinking', speaking: 'Speaking' } as const;
 
 export default function ChatDock({ deckId, chat, streaming, busy }: { deckId: string; chat: ChatMessage[]; streaming?: string | null; busy: boolean }) {
@@ -36,7 +50,7 @@ export default function ChatDock({ deckId, chat, streaming, busy }: { deckId: st
         {!chat.length && !streaming && <div className="vx-empty">Ask anything about this deck. Turn on the mic to talk; it will answer out loud and edit slides as you go.</div>}
         {chat.map((m) => (
           <div key={m.id} className={`vx-msg vx-msg-${m.role}`}>
-            {m.text}
+            {m.role === 'assistant' ? <Md text={m.text} /> : m.text}
             {m.role === 'assistant' && m.spoken && m.spoken !== m.text && <div className="vx-msg-spoken">Said: {m.spoken}</div>}
           </div>
         ))}

@@ -50,12 +50,13 @@ export const webTools: ToolDef[] = [
       ctx.status(`Searching the web for "${q}"...`);
       const t0 = Date.now();
       // Node's fetch gets a 403 from DDG on POST (measured; curl's POST passes), while GET returns results. Try GET, fall back to POST.
-      let res = await fetch(`https://html.duckduckgo.com/html/?${new URLSearchParams({ q })}`, { headers: { 'user-agent': BROWSER_UA, accept: '*/*' } });
+      let res = await fetch(`https://html.duckduckgo.com/html/?${new URLSearchParams({ q })}`, { headers: { 'user-agent': BROWSER_UA, accept: '*/*' }, signal: AbortSignal.timeout(20_000) });
       if (!res.ok) {
         res = await fetch('https://html.duckduckgo.com/html/', {
           method: 'POST',
           headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': BROWSER_UA, accept: '*/*' },
           body: new URLSearchParams({ q }).toString(),
+          signal: AbortSignal.timeout(20_000),
         });
       }
       const html = await res.text();
@@ -89,11 +90,12 @@ export const webTools: ToolDef[] = [
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 20000);
       let res: Response;
+      let raw: string;
       try {
         res = await fetch(url, { redirect: 'follow', signal: ac.signal, headers: { 'user-agent': BROWSER_UA, accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8', 'accept-language': 'en-GB,en;q=0.9' } });
+        raw = await res.text(); // inside the timeout: a slow/endless body must not wedge the turn
       } finally { clearTimeout(timer); }
       const ctype = res.headers.get('content-type') ?? '';
-      const raw = await res.text();
       const text = (/html|xml/i.test(ctype) || /^\s*</.test(raw) ? htmlToText(raw) : raw.replace(/\s+/g, ' ').trim()).slice(0, 12000);
       const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(raw)?.[1];
       const ms = Date.now() - t0;

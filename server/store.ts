@@ -38,12 +38,28 @@ export function createSession(entity: DeckEntity, forkOf: Session | null = null)
   return s;
 }
 
+/** Deck ids are "<slug>-<6 chars>"; anything else (e.g. "../x") must never reach the filesystem. */
+const VALID_ID = /^[a-z0-9-]{1,80}$/;
+
+/** A turn killed mid tool-loop (restart, thrown tool batch, fork mid-build) leaves an assistant tool_use
+ *  with no tool_result, which the Messages API rejects on the next turn. Answer each dangling call. */
+export function repairMessages(s: Session) {
+  const last = s.messages[s.messages.length - 1];
+  if (last?.role !== 'assistant' || !Array.isArray(last.content)) return;
+  const uses = (last.content as Array<{ type?: string; id?: string }>).filter((b) => b?.type === 'tool_use' && b.id);
+  if (!uses.length) return;
+  s.messages.push({ role: 'user', content: uses.map((u) => ({ type: 'tool_result', tool_use_id: u.id, is_error: true, content: 'Interrupted before this tool finished; call it again if still needed.' })) });
+}
+
 export function getSession(id: string): Session | null {
+  if (!VALID_ID.test(id)) return null;
   if (cache.has(id)) return cache.get(id)!;
   const f = path.join(DIR, `${id}.json`);
   if (!fs.existsSync(f)) return null;
   const s = JSON.parse(fs.readFileSync(f, 'utf8')) as Session;
   s.busy = false; // a restart kills any in-flight turn
+  if (s.deck.status === 'building') s.deck.status = s.deck.slides.length ? 'ready' : 'error'; // no build is running any more
+  repairMessages(s);
   cache.set(id, s);
   return s;
 }
@@ -55,8 +71,16 @@ export function save(s: Session) {
   clearTimeout(saveTimers.get(s.deck.id));
   saveTimers.set(s.deck.id, setTimeout(() => {
     const f = path.join(DIR, `${s.deck.id}.json`);
-    fs.writeFileSync(f + '.tmp', JSON.stringify(s));
-    fs.renameSync(f + '.tmp', f);
+    // Inside a timer: an fs error here (Windows EPERM/EBUSY on rename while AV/indexer holds the file) would
+    // be an uncaught exception that kills the server. Log and retry on the next save instead.
+    try {
+      fs.writeFileSync(f + '.tmp', JSON.stringify(s));
+      fs.renameSync(f + '.tmp', f);
+    } catch (e) {
+      console.error('[store] save failed', s.deck.id, (e as Error).message);
+      saveTimers.delete(s.deck.id);
+      setTimeout(() => save(s), 500);
+    }
   }, 150));
 }
 
@@ -87,6 +111,7 @@ export function addReceipt(s: Session, r: Omit<Receipt, 'id' | 'at'>): Receipt {
 }
 
 export function setBusy(s: Session, busy: boolean) {
+  if (busy) repairMessages(s); // a previous turn may have died between tool_use and tool_result
   s.busy = busy;
   emit(s.deck.id, { type: 'busy', busy });
 }
@@ -95,7 +120,7 @@ export function emit(deckId: string, e: DeckEvent) {
   const subs = subscribers.get(deckId);
   if (!subs) return;
   const line = `data: ${JSON.stringify(e)}\n\n`;
-  for (const res of subs) res.write(line);
+  for (const res of subs) { try { res.write(line); } catch { subs.delete(res); } }
 }
 
 export function subscribe(deckId: string, res: Response, s: Session) {
@@ -103,6 +128,7 @@ export function subscribe(deckId: string, res: Response, s: Session) {
   res.write(`data: ${JSON.stringify({ type: 'snapshot', view: view(s) } satisfies DeckEvent)}\n\n`);
   if (!subscribers.has(deckId)) subscribers.set(deckId, new Set());
   subscribers.get(deckId)!.add(res);
-  const ka = setInterval(() => res.write(': ka\n\n'), 15000);
+  res.on('error', () => subscribers.get(deckId)?.delete(res));
+  const ka = setInterval(() => { try { res.write(': ka\n\n'); } catch { /* closed */ } }, 15000);
   res.on('close', () => { clearInterval(ka); subscribers.get(deckId)?.delete(res); });
 }

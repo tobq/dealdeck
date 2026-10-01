@@ -13,6 +13,18 @@ export interface CpResult { content: ContentBlock[]; stopReason: string | null; 
 
 class RetryableError extends Error {}
 
+/** Copy of messages with a cache breakpoint on the last block, so every later turn reuses the cached
+ * conversation prefix (big tool results included) instead of re-reading it. Stored messages are untouched. */
+function withCacheBreakpoint(messages: CpRequest['messages']): CpRequest['messages'] {
+  if (!messages.length) return messages;
+  const last = messages[messages.length - 1];
+  const blocks: any[] = typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : Array.isArray(last.content) ? [...last.content] : [];
+  const i = blocks.length - 1;
+  if (i < 0 || !['text', 'tool_result'].includes(blocks[i]?.type)) return messages;
+  blocks[i] = { ...blocks[i], cache_control: { type: 'ephemeral' } };
+  return [...messages.slice(0, -1), { ...last, content: blocks }];
+}
+
 function baseUrl() { return (process.env.CP_BASE_URL || 'http://localhost:8089').replace(/\/$/, ''); }
 
 async function once(req: CpRequest, fallback: boolean): Promise<CpResult> {
@@ -21,7 +33,7 @@ async function once(req: CpRequest, fallback: boolean): Promise<CpResult> {
     max_tokens: req.maxTokens ?? 16000,
     stream: true,
     system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
-    messages: req.messages,
+    messages: withCacheBreakpoint(req.messages),
   };
   if (!fallback && process.env.CP_EFFORT) body.output_config = { effort: process.env.CP_EFFORT };
   if (req.tools?.length) body.tools = req.tools;

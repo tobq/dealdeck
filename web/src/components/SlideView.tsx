@@ -14,16 +14,17 @@ function Cites({ ids, onCite }: { ids?: string[]; onCite: CiteFn }) {
   if (!ids || !ids.length) return null;
   return (
     <span className="cites">
-      {ids.map((r) => (
+      {ids.map((r) => onCite ? (
         <button
           key={r}
           className="cite"
-          tabIndex={onCite ? 0 : -1}
-          onClick={(e) => { e.stopPropagation(); onCite?.(r); }}
-          title={onCite ? `Open receipt ${r}` : r}
+          onClick={(e) => { e.stopPropagation(); onCite(r); }}
+          title={`Open receipt ${r}`}
         >
           {r}
         </button>
+      ) : (
+        <span key={r} className="cite">{r}</span>
       ))}
     </span>
   );
@@ -77,11 +78,15 @@ function Metrics({ slide, onCite }: { slide: Slide; onCite: CiteFn }) {
   const ms = slide.metrics || [];
   const cols = ms.length <= 2 ? ms.length || 1 : ms.length === 4 ? 2 : ms.length <= 6 ? 3 : 4;
   const size = fit(ms.length, 96, 56, 3, 8);
+  // Card text width in canvas px (slide padding 96x2, grid gap 28, card padding 36x2, cite room 60);
+  // shrink long values so they fit on one line instead of ellipsing ("$200M Series E", "Not disclosed").
+  const room = (W - 192 - 28 * (cols - 1)) / cols - 72 - 60;
+  const sizeFor = (v: string) => Math.max(34, Math.min(size, Math.floor(room / (0.62 * Math.max(1, v.length)))));
   return (
     <div className="sv-metrics" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
       {ms.map((m, i) => (
         <div className="sv-metric" key={i}>
-          <div className="sv-metric-value" style={{ fontSize: size }}>{m.value}<Cites ids={m.receipts} onCite={onCite} /></div>
+          <div className="sv-metric-value" style={{ fontSize: sizeFor(String(m.value ?? '')) }}>{m.value}<Cites ids={m.receipts} onCite={onCite} /></div>
           <div className="sv-metric-label">{m.label}</div>
           {m.note && <div className="sv-metric-note">{m.note}</div>}
         </div>
