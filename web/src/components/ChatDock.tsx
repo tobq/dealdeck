@@ -11,7 +11,7 @@ const SpeakerIcon = ({ off }: { off: boolean }) => (
 );
 
 /** Minimal markdown for chat bubbles: **bold** and "- " bullets, so model replies do not show raw asterisks. */
-function Md({ text }: { text: string }) {
+export function Md({ text }: { text: string }) {
   return (
     <>
       {text.split('\n').map((line, i, all) => {

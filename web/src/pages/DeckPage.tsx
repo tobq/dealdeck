@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Deck } from '../../../shared/types';
 import SlideView from '../components/SlideView';
 import ReceiptPanel from '../components/ReceiptPanel';
-import ChatDock from '../components/ChatDock';
+import ChatDock, { Md } from '../components/ChatDock';
 import { usePlayback } from '../components/PresentMode';
 import BullBear from '../components/BullBear';
 import ShareButton from '../components/ShareButton';
@@ -67,7 +67,12 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
   usePlayback({ deckId: deck.id, slides, index: current, setIndex: setCurrent, playing, setPlaying, building });
 
   // Agent answers surface as a caption over the player; spoken ones also play via the shared player.
-  useEffect(() => bus.on('chat', (e) => { if (e.message.role === 'assistant') { setToast(e.message.text); setAsked(false); } }), []);
+  // Only answers to something the viewer asked become a caption; the build summary stays in Edit view's chat.
+  const askedRef = useRef(false);
+  askedRef.current = asked || v.micOn;
+  useEffect(() => bus.on('chat', (e) => {
+    if (e.message.role === 'assistant' && askedRef.current) { setToast(e.message.spoken || e.message.text); setAsked(false); }
+  }), []);
   useEffect(() => { if (!toast) return; const t = window.setTimeout(() => setToast(null), 25000); return () => clearTimeout(t); }, [toast]);
   // Talking to the deck pauses the show so the answer can be heard.
   useEffect(() => { if (v.micOn) setPlaying(false); }, [v.micOn, setPlaying]);
@@ -109,7 +114,7 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
         {playing && slide?.narration && !caption && <p className="pl-narration">{slide.narration}</p>}
         {(caption || (asked && busy)) && (
           <div className="pl-toast" role="status">
-            <div className="pl-toast-body">{caption || <span className="muted">Thinking...</span>}</div>
+            <div className="pl-toast-body">{caption ? <Md text={caption} /> : <span className="muted">Thinking...</span>}</div>
             <button className="pl-x" aria-label="Dismiss" onClick={() => { setToast(null); setAsked(false); }}>×</button>
           </div>
         )}
