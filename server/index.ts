@@ -72,7 +72,7 @@ app.get('/api/decks/:id', (req, res) => {
 app.get('/api/decks/:id/events', (req, res) => {
   const s = getSession(req.params.id);
   if (!s) return res.status(404).end();
-  subscribe(req.params.id, res, s);
+  subscribe(req.params.id, res, s, req);
 });
 
 app.get('/api/decks/:id/receipts/:rid', (req, res) => {

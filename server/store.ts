@@ -119,19 +119,49 @@ export function setBusy(s: Session, busy: boolean) {
   emit(s.deck.id, { type: 'busy', busy });
 }
 
+// Every event carries a per-deck sequence id and stays in a short replay ring, so a reconnecting
+// EventSource (it sends Last-Event-ID itself) resumes exactly where it left off.
+const RING = 500;
+const BOOT = Date.now().toString(36);
+const log = new Map<string, { seq: number; ring: Array<{ id: number; line: string }> }>();
+// Subscribers behind a buffering proxy (the Cloudflare quick tunnel holds a stream until it ENDS):
+// they get each batch as a complete response and the browser reconnects at once (retry below).
+const oneShot = new WeakSet<Response>();
+
 export function emit(deckId: string, e: DeckEvent) {
+  let l = log.get(deckId);
+  if (!l) log.set(deckId, (l = { seq: 0, ring: [] }));
+  const id = ++l.seq;
+  const line = `id: ${BOOT}.${id}\ndata: ${JSON.stringify(e)}\n\n`;
+  l.ring.push({ id, line });
+  if (l.ring.length > RING) l.ring.shift();
   const subs = subscribers.get(deckId);
   if (!subs) return;
-  const line = `data: ${JSON.stringify(e)}\n\n`;
-  for (const res of subs) { try { res.write(line); } catch { subs.delete(res); } }
+  for (const res of subs) {
+    try { res.write(line); if (oneShot.has(res)) { subs.delete(res); res.end(); } } catch { subs.delete(res); }
+  }
 }
 
-export function subscribe(deckId: string, res: Response, s: Session) {
-  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
-  res.write(`data: ${JSON.stringify({ type: 'snapshot', view: view(s) } satisfies DeckEvent)}\n\n`);
+export function subscribe(deckId: string, res: Response, s: Session, req?: { headers: Record<string, unknown> }) {
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+  res.write('retry: 300\n\n');
+  const buffered = !!req?.headers['cf-ray'];
+  const l = log.get(deckId);
+  const seq = l?.seq ?? 0;
+  // Ids carry this boot's tag: an id from before a restart means "send a fresh snapshot".
+  const hdr = String(req?.headers['last-event-id'] ?? '');
+  const last = hdr.startsWith(BOOT + '.') ? Number(hdr.slice(BOOT.length + 1)) : NaN;
+  let missed: Array<{ line: string }> | null = null;
+  if (Number.isInteger(last) && last === seq) missed = [];
+  else if (Number.isInteger(last) && last < seq && l && l.ring[0].id <= last + 1) missed = l.ring.filter((x) => x.id > last);
+  if (missed) for (const x of missed) res.write(x.line);
+  else res.write(`id: ${BOOT}.${seq}\ndata: ${JSON.stringify({ type: 'snapshot', view: view(s) } satisfies DeckEvent)}\n\n`);
+  if (buffered && (!missed || missed.length)) { res.end(); return; }
+  if (buffered) oneShot.add(res);
   if (!subscribers.has(deckId)) subscribers.set(deckId, new Set());
   subscribers.get(deckId)!.add(res);
   res.on('error', () => subscribers.get(deckId)?.delete(res));
-  const ka = setInterval(() => { try { res.write(': ka\n\n'); } catch { /* closed */ } }, 15000);
+  // A held one-shot ends after 20s with nothing new so the proxy never sits on it; the browser just reconnects.
+  const ka = setInterval(() => { try { if (oneShot.has(res)) { subscribers.get(deckId)?.delete(res); res.end(); } else res.write(': ka\n\n'); } catch { /* closed */ } }, buffered ? 20000 : 15000);
   res.on('close', () => { clearInterval(ka); subscribers.get(deckId)?.delete(res); });
 }
