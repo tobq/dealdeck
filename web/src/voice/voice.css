@@ -1,0 +1,68 @@
+/* Voice / chat / present / bull-bear / share. Minimal light keynote, one accent. */
+:root { --vx-accent: #3b5bfd; --vx-ink: #111318; --vx-mute: #6b7280; --vx-line: #e6e8ee; --vx-soft: #f6f7fa; --vx-bull: #0f9d58; --vx-bear: #d93025; }
+
+.vx-btn { font: inherit; font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--vx-line); background: #fff; color: var(--vx-ink); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.vx-btn:hover { border-color: #cfd3dc; }
+.vx-btn:disabled { opacity: .5; cursor: default; }
+.vx-btn-primary { background: var(--vx-accent); border-color: var(--vx-accent); color: #fff; }
+.vx-btn-on { background: var(--vx-accent); border-color: var(--vx-accent); color: #fff; }
+
+/* ChatDock */
+.vx-dock { display: flex; flex-direction: column; height: 100%; min-height: 0; background: #fff; border-left: 1px solid var(--vx-line); }
+.vx-log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.vx-msg { max-width: 92%; padding: 10px 13px; border-radius: 14px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
+.vx-msg-user { align-self: flex-end; background: var(--vx-accent); color: #fff; border-bottom-right-radius: 4px; }
+.vx-msg-assistant { align-self: flex-start; background: var(--vx-soft); color: var(--vx-ink); border-bottom-left-radius: 4px; }
+.vx-msg-spoken { margin-top: 6px; font-size: 12px; color: var(--vx-mute); font-style: italic; }
+.vx-msg-streaming::after { content: ''; display: inline-block; width: 6px; height: 14px; margin-left: 3px; background: var(--vx-accent); vertical-align: -2px; animation: vx-blink 1s steps(2) infinite; }
+.vx-empty { color: var(--vx-mute); font-size: 14px; text-align: center; margin: auto; padding: 24px; }
+.vx-status { padding: 6px 16px; font-size: 12px; color: var(--vx-mute); min-height: 26px; display: flex; align-items: center; gap: 8px; }
+.vx-partial { color: var(--vx-ink); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vx-err { color: var(--vx-bear); }
+.vx-inputrow { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--vx-line); align-items: center; }
+.vx-input { flex: 1; font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid var(--vx-line); border-radius: 10px; outline: none; min-width: 0; }
+.vx-input:focus { border-color: var(--vx-accent); }
+.vx-mic { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--vx-line); background: #fff; cursor: pointer; display: grid; place-items: center; position: relative; flex: none; }
+.vx-mic svg { width: 18px; height: 18px; }
+.vx-mic-on { background: var(--vx-accent); border-color: var(--vx-accent); color: #fff; }
+.vx-mic-on::before { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--vx-accent); animation: vx-pulse 1.4s ease-out infinite; }
+.vx-icon { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--vx-line); background: #fff; cursor: pointer; display: grid; place-items: center; flex: none; color: var(--vx-ink); }
+.vx-icon svg { width: 18px; height: 18px; }
+.vx-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--vx-mute); flex: none; }
+.vx-dot-listening { background: var(--vx-bull); animation: vx-blink 1.2s infinite; }
+.vx-dot-thinking { background: #f2a900; }
+.vx-dot-speaking { background: var(--vx-accent); }
+
+/* Present */
+.vx-present { position: fixed; inset: 0; z-index: 1000; background: #fff; display: flex; flex-direction: column; }
+.vx-present-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 4vh 6vw; overflow: auto; }
+.vx-present-stage > * { width: 100%; max-width: 1400px; }
+.vx-present-bar { display: flex; align-items: center; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--vx-line); font-size: 14px; color: var(--vx-mute); }
+.vx-present-bar .vx-grow { flex: 1; }
+.vx-progress { height: 3px; background: var(--vx-line); }
+.vx-progress > div { height: 100%; background: var(--vx-accent); transition: width .3s; }
+.vx-caption { padding: 0 24px 12px; text-align: center; font-size: 16px; color: var(--vx-ink); min-height: 28px; }
+
+/* Bull vs Bear */
+.vx-bb { position: fixed; right: 24px; bottom: 24px; width: min(720px, calc(100vw - 48px)); max-height: 70vh; z-index: 900; background: #fff; border: 1px solid var(--vx-line); border-radius: 16px; box-shadow: 0 12px 40px rgba(17,19,24,.12); display: flex; flex-direction: column; }
+.vx-bb-head { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--vx-line); gap: 12px; }
+.vx-bb-head h3 { margin: 0; font-size: 16px; flex: 1; }
+.vx-bb-cols { display: grid; grid-template-columns: 1fr 1fr; padding: 8px 16px 0; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.vx-bb-cols .vx-bull-h { color: var(--vx-bull); }
+.vx-bb-cols .vx-bear-h { color: var(--vx-bear); text-align: right; }
+.vx-bb-log { overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+.vx-bb-line { max-width: 62%; padding: 10px 13px; border-radius: 14px; font-size: 14px; line-height: 1.45; border: 1px solid var(--vx-line); }
+.vx-bb-bull { align-self: flex-start; border-left: 3px solid var(--vx-bull); }
+.vx-bb-bear { align-self: flex-end; border-right: 3px solid var(--vx-bear); }
+.vx-bb-active { box-shadow: 0 0 0 2px var(--vx-accent); }
+
+/* Share modal */
+.vx-modal-bg { position: fixed; inset: 0; z-index: 1100; background: rgba(17,19,24,.35); display: grid; place-items: center; }
+.vx-modal { background: #fff; border-radius: 16px; padding: 24px; width: min(420px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 14px; }
+.vx-modal h3 { margin: 0; font-size: 18px; }
+.vx-modal img { width: 220px; height: 220px; align-self: center; }
+.vx-row { display: flex; gap: 8px; }
+.vx-hint { font-size: 13px; color: var(--vx-mute); }
+
+@keyframes vx-pulse { from { transform: scale(1); opacity: .7; } to { transform: scale(1.35); opacity: 0; } }
+@keyframes vx-blink { 50% { opacity: .25; } }
