@@ -2,14 +2,14 @@
 // No deck session: tools write receipts into a throwaway in-memory Session that is never persisted.
 import { cpMessage, type ContentBlock } from './cp.js';
 import { runToolBatch, toAnthropicTools, type ToolDef, type ToolUseBlock } from './tooling.js';
-import { dealroomTools } from './dealroom.js';
+import { dealroomTools, imageUrl, searchEntities } from './dealroom.js';
 import { webTools } from './web.js';
 import { nowIso, shortId, type Session } from './store.js';
 import type { SuggestBody, Suggestion, SuggestResponse } from '../shared/types.js';
 
 const MAX_ROUNDS = 6;
-const DEADLINE_MS = 45_000;
-const CACHE_MS = 10 * 60_000;
+const DEADLINE_MS = 20_000;
+const CACHE_MS = 3 * 60 * 60_000; // long: the demo pre-warms its thesis queries
 const cache = new Map<string, { at: number; res: Promise<SuggestResponse> }>();
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -65,13 +65,16 @@ function submitTool(onSubmit: (r: SuggestResponse) => void): ToolDef {
   };
 }
 
-/** Find the Dealroom row for a uuid anywhere in the successful Dealroom receipts. */
-function findDealroomRow(s: Session, uuid: string): any | null {
+const normName = (v: unknown) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/** Find the Dealroom row for a uuid (or, when the model dropped the uuid, an exact name) in the successful Dealroom receipts. */
+function findDealroomRow(s: Session, uuid: string, name = ''): any | null {
+  const nn = normName(name);
   let hit: any = null;
   const walk = (n: any, depth: number) => {
     if (hit || !n || typeof n !== 'object' || depth > 8) return;
     if (Array.isArray(n)) { for (const x of n) walk(x, depth + 1); return; }
-    if ((n.uuid === uuid || n.id === uuid) && typeof n.name === 'string') { hit = n; return; }
+    if (typeof n.name === 'string' && (uuid ? (n.uuid === uuid || n.id === uuid) : (nn && typeof (n.uuid ?? n.id) === 'string' && n.type !== 'investor' && normName(n.name) === nn))) { hit = n; return; }
     for (const v of Object.values(n)) walk(v, depth + 1);
   };
   for (const r of s.receipts) if (r.source === 'dealroom' && r.status < 400) walk(r.json, 0);
@@ -86,8 +89,8 @@ function ground(s: Session, picks: any[], exclude: Set<string>, limit: number): 
   for (const p of picks) {
     const name = str(p?.name);
     if (!name || !allText.includes(name.toLowerCase())) continue;
-    const uuid = str(p?.uuid) ?? '';
-    const row = uuid ? findDealroomRow(s, uuid) : null;
+    const row = findDealroomRow(s, str(p?.uuid) ?? '') ?? findDealroomRow(s, '', name);
+    const uuid: string = row ? (str(row.uuid) ?? str(row.id) ?? '') : '';
     const key = row ? uuid : name.toLowerCase();
     if (seen.has(key) || (uuid && exclude.has(uuid))) continue;
     seen.add(key);
@@ -96,7 +99,7 @@ function ground(s: Session, picks: any[], exclude: Set<string>, limit: number): 
       uuid: row ? uuid : '',
       kind: 'company',
       name: row ? (str(row.name) ?? name) : name,
-      image: row ? (str(row.image) ?? str(row.images?.['100x100']) ?? str(p.image)) : null,
+      image: row ? (imageUrl(row.image) ?? imageUrl(row.images?.['100x100']) ?? imageUrl(p.image)) : null,
       tagline: row ? (str(row.tagline) ?? str(p.tagline)) : str(p.tagline),
       hqCity: (row && (str(row.hq_city) ?? str(hq?.city?.name))) || str(p.hqCity),
       hqCountry: (row && (str(row.hq_country) ?? str(hq?.country?.name))) || str(p.hqCountry),
@@ -159,7 +162,14 @@ async function run(body: SuggestBody): Promise<SuggestResponse> {
   const sub = submitted as SuggestResponse | null;
   if (!sub) throw new Error('The sourcing agent did not return suggestions in time.');
   const exclude = body.fundUuid ? portfolioUuids(s) : new Set<string>();
-  return { thesisSummary: sub.thesisSummary, suggestions: ground(s, sub.suggestions, exclude, limit) };
+  const picks = ground(s, sub.suggestions, exclude, limit);
+  await Promise.all(picks.filter((p) => !p.uuid).map(async (p) => {
+    // Picks that never appeared in a Dealroom row (web-sourced) get resolved by exact name via search.
+    const hit = (await searchEntities(p.name, 'company').catch(() => [])).find((h) => h.type === 'company' && normName(h.name) === normName(p.name));
+    if (!hit || exclude.has(hit.uuid)) return;
+    Object.assign(p, { uuid: hit.uuid, image: p.image ?? hit.image, tagline: p.tagline ?? hit.tagline, hqCity: p.hqCity ?? hit.hqCity, hqCountry: p.hqCountry ?? hit.hqCountry });
+  }));
+  return { thesisSummary: sub.thesisSummary, suggestions: picks };
 }
 
 export async function suggestCompanies(body: SuggestBody): Promise<SuggestResponse> {

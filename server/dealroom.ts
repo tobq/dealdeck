@@ -76,6 +76,12 @@ export async function dealroomGet(path: string, query?: Record<string, string | 
   });
   let res = await doFetch();
   if (res.status === 401) { token = null; res = await doFetch(); }
+  // Dealroom rate-limits bursts (RATE_LIMITED 429); a parallel tool batch hits it routinely.
+  for (let i = 0; res.status === 429 && i < 3; i++) {
+    const ra = Number(res.headers.get('retry-after'));
+    await new Promise((r) => setTimeout(r, Number.isFinite(ra) && ra > 0 ? Math.min(ra, 10) * 1000 : 1500 * (i + 1)));
+    res = await doFetch();
+  }
   const text = await res.text();
   const ms = Date.now() - t0;
   if (cloudflareBlocked(res.status, res.headers.get('content-type'), text)) throw new Error('Dealroom blocked this network (Cloudflare 403)');
@@ -85,6 +91,11 @@ export async function dealroomGet(path: string, query?: Record<string, string | 
 }
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
+/** Dealroom returns scheme-less image hosts ("storage.googleapis.com/..."); browsers need https. */
+export const imageUrl = (v: unknown): string | null => {
+  const s = str(v);
+  return s && !/^https?:\/\//.test(s) && !s.startsWith('data:') ? `https://${s.replace(/^\/+/, '')}` : s;
+};
 
 export async function searchEntities(q: string, types?: string): Promise<SearchHit[]> {
   const { status, json } = await dealroomGet('/data/search', { q, limit: 10, ...(types ? { types } : {}) });
@@ -95,7 +106,7 @@ export async function searchEntities(q: string, types?: string): Promise<SearchH
     type: r.type,
     name: r.name,
     tagline: str(r.tagline),
-    image: str(r.image),
+    image: imageUrl(r.image),
     hqCity: str(r.hq_city),
     hqCountry: str(r.hq_country),
     websiteDomain: str(r.website_domain),
@@ -138,12 +149,26 @@ export async function resolveDealroomUrl(url: string): Promise<{ uuid: string; k
 // ---------- trimming ----------
 const MAX_ITEMS = 25;
 const MAX_STR = 600;
-const DROP_KEYS = new Set(['locked', 'created_at', 'deleted_at', 'updated_at', 'images', 'image_urls', 'svg', 'logo_svg']);
+const DROP_KEYS = new Set(['locked', 'created_at', 'deleted_at', 'updated_at', 'images', 'image_urls', 'svg', 'logo_svg', 'lat', 'lon', 'latitude', 'longitude',
+  'angellist', 'crunchbase', 'facebook', 'instagram', 'youtube', 'city_unique_id', 'state_unique_id', 'country_unique_id', 'continent_unique_id', 'city_region_unique_ids', 'next_cursor']);
+const IMAGE_KEY = /^(image|logo|avatar|photo|picture|icon|thumbnail)(_url)?$/i;
+const HTML_TAG = /<\/?[a-z][^>]*>/i;
+const stripHtml = (t: string) => t.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+const nm = (o: any): string | null => (o && typeof o === 'object' ? str(o.name) : null);
+/** {role, city:{name}, country:{name}, ...} -> "hq: London, United Kingdom" (ids/coords/continent are noise). */
+function compactLocation(l: any): unknown {
+  if (!l || typeof l !== 'object' || Array.isArray(l) || !(l.city || l.country)) return l;
+  const place = [nm(l.city), nm(l.country)].filter(Boolean).join(', ');
+  return l.role ? `${l.role}: ${place}` : place;
+}
 
 /** Keep decision-useful content: drop nulls/empties/noise keys, cap arrays at 25 and strings at 600 chars. */
 export function trim(v: unknown, depth = 0): unknown {
   if (v === null || v === undefined) return undefined;
-  if (typeof v === 'string') return v.length > MAX_STR ? v.slice(0, MAX_STR) + '...' : v;
+  if (typeof v === 'string') {
+    const t = HTML_TAG.test(v) ? stripHtml(v) : v;
+    return t.length > MAX_STR ? t.slice(0, MAX_STR) + '...' : t;
+  }
   if (typeof v !== 'object') return v;
   if (depth > 7) return undefined;
   if (Array.isArray(v)) {
@@ -155,7 +180,8 @@ export function trim(v: unknown, depth = 0): unknown {
   const out: Record<string, unknown> = {};
   for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
     if (DROP_KEYS.has(k)) continue;
-    const t = trim(x, depth + 1);
+    if (IMAGE_KEY.test(k) && typeof x === 'string') { const u = imageUrl(x); if (u) out[k] = u; continue; }
+    const t = trim((k === 'locations' || k === 'location') ? (Array.isArray(x) ? x.map(compactLocation) : compactLocation(x)) : x, depth + 1);
     if (t === undefined) continue;
     if (typeof t === 'object' && !Array.isArray(t) && !Object.keys(t as object).length) continue;
     out[k] = t;
@@ -170,11 +196,12 @@ function capJson(json: unknown): unknown {
 }
 
 /** One Dealroom call -> receipt -> {receipt, data} for the model. */
-async function call(ctx: ToolCtx, endpoint: string, path: string, query: Record<string, string | number | boolean> = {}) {
+async function call(ctx: ToolCtx, endpoint: string, path: string, query: Record<string, string | number | boolean> = {}, shape?: (data: any) => any) {
   const { status, json, ms } = await dealroomGet(path, query);
   const r = addReceipt(ctx.session, { source: 'dealroom', endpoint, params: { path, ...query }, status, ms, json: capJson(json) });
   if (status >= 400) return { receipt: r.id, status, error: json?.error ?? json };
-  const data = trim(json?.data !== undefined ? json.data : json) ?? null;
+  const raw = json?.data !== undefined ? json.data : json;
+  const data = trim(shape ? shape(raw) : raw) ?? null;
   const page = json?.page ? trim(json.page) : undefined;
   return { receipt: r.id, data, ...(page ? { page } : {}) };
 }
@@ -206,6 +233,20 @@ async function pickFilterKey(scope: string, prefer: RegExp[], fallback: string):
 const uuidProp = { type: 'string', description: 'Dealroom entity UUID (from dealroom_search or the deck entity)' };
 const limitProp = { type: 'integer', minimum: 1, maximum: 100, description: 'Max rows (default 25)' };
 const lim = (n: unknown, d = 25) => Math.max(1, Math.min(100, Number(n) || d));
+
+/** Headcount breakdown = monthly % shares per country/department; the newest month per dimension is the decision-useful slice. */
+function latestHeadcount(d: any): any {
+  if (!Array.isArray(d) || !d.length) return d;
+  const key = (r: any) => (Number(r.year) || 0) * 100 + (Number(r.month) || 0);
+  const out: any[] = [];
+  for (const type of [...new Set(d.map((r: any) => r.breakdown_type))]) {
+    const rows = d.filter((r: any) => r.breakdown_type === type);
+    const newest = Math.max(...rows.map(key));
+    out.push(...rows.filter((r: any) => key(r) === newest).sort((a: any, b: any) => (b.percentage ?? 0) - (a.percentage ?? 0))
+      .map((r: any) => ({ breakdown_type: r.breakdown_type, item: r.item_name, year: r.year, month: r.month, percentage: r.percentage })));
+  }
+  return out;
+}
 
 const COMPANY_SECTIONS = ['funding_rounds', 'investors', 'team', 'similar', 'valuations', 'headcount', 'web_traffic', 'financials', 'news', 'jobs', 'patents'] as const;
 const COMPANY_SUBPATH: Record<string, string> = {
@@ -245,15 +286,18 @@ export const dealroomTools: ToolDef[] = [
       const limit = lim(input.limit);
       ctx.status(`Pulling ${label(section)}...`);
       if (section === 'news' || section === 'jobs') {
-        const key = await pickFilterKey(section, [/^entity_id$/, /^entity_uuid$/, /^company_id$/, /^entity/], 'entity_id');
-        const sort = section === 'news' ? '-date' : '-date_posted';
-        const first = await call(ctx, `/data/${section}`, `/data/${section}`, { filter: `${key}[eq]:${input.uuid}`, limit, sort });
-        if ((first as any).status === 422 || (first as any).status === 400) return call(ctx, `/data/${section}`, `/data/${section}`, { filter: `${key}[eq]:${input.uuid}`, limit });
-        return first;
+        // Verified live: both scopes filter by entity_id; news sorts by publish_date, jobs by date_posted.
+        const sort = section === 'news' ? '-publish_date' : '-date_posted';
+        return call(ctx, `/data/${section}`, `/data/${section}`, { filter: `entity_id[eq]:${input.uuid}`, limit, sort });
       }
       const sub = COMPANY_SUBPATH[section];
       if (!sub) throw new Error(`Unknown company section "${section}"; use one of ${COMPANY_SECTIONS.join(', ')}`);
-      return call(ctx, `/data/companies/{id}/${sub}`, `/data/companies/${id}/${sub}`, { limit });
+      // web-traffic and headcount-breakdown are full chronological series (oldest first, limit ignored):
+      // keep the newest months so the row cap does not leave only 2018 data.
+      const shape = section === 'web_traffic' ? (d: any) => (Array.isArray(d) ? d.slice(-limit).reverse() : d)
+        : section === 'headcount' ? latestHeadcount
+        : undefined;
+      return call(ctx, `/data/companies/{id}/${sub}`, `/data/companies/${id}/${sub}`, { limit }, shape);
     },
   },
   {
@@ -275,9 +319,11 @@ export const dealroomTools: ToolDef[] = [
       const limit = lim(input.limit);
       ctx.status(`Pulling investor ${label(section)}...`);
       if (section === 'deals') {
-        const key = await pickFilterKey('transactions', [/^investor_id$/, /^investor_uuid$/, /^investors?\.(id|uuid)$/, /investor.*(id|uuid)/], 'investor_id');
-        const op = /\./.test(key) ? 'eq' : 'in_any';
-        return call(ctx, '/data/transactions', '/data/transactions', { filter: `${key}[${op}]:${input.uuid}`, sort: '-date', limit });
+        // /data/transactions has no investor-id filter (verified via /reference/filters); investor_name[eq] is the key.
+        const prof = await dealroomGet(`/data/investors/${id}`);
+        const name = str(prof.json?.data?.name) ?? str(prof.json?.name);
+        if (!name) return { status: prof.status, error: 'could not resolve the investor name for the transactions filter' };
+        return call(ctx, '/data/transactions', '/data/transactions', { filter: `investor_name[eq]:${name}`, sort: '-date', limit });
       }
       const sub = INVESTOR_SUBPATH[section];
       if (!sub) throw new Error(`Unknown investor section "${section}"; use one of ${INVESTOR_SECTIONS.join(', ')}`);

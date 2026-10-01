@@ -14,11 +14,11 @@ Every slide also gets "narration": 1-3 spoken sentences for Present mode (plain 
 
 const COMPANY_TEMPLATE = `Template: VC INVESTMENT MEMO on the company (8-10 slides):
 1. title - company name + one-line thesis as subtitle
-2. metrics - snapshot: total funding, last round (size, stage, date), valuation if known, HQ, founded, headcount
+2. metrics - snapshot from the Dealroom profile: total funding, last round (size, stage, date), valuation, revenue if Dealroom has it, HQ / founded, headcount (with its 1y growth)
 3. chart - funding history (bar, amount per round over time, unit e.g. "$M")
 4. table or people - key investors (lead investors, notable funds)
 5. people - founders and team
-6. chart - traction: headcount and/or web traffic over time (line)
+6. chart - traction: monthly web visits from the web_traffic section (line, one point per month, latest 12-24 months you can see)
 7. table - competitive landscape: similar companies (name, HQ, total funding, last round)
 8. bullets - news and signals (recent events, hires, launches)
 9. compare - Bull vs Bear (left heading "Bull", right heading "Bear")
@@ -26,11 +26,11 @@ const COMPANY_TEMPLATE = `Template: VC INVESTMENT MEMO on the company (8-10 slid
 
 const INVESTOR_TEMPLATE = `Template: FUND DECK FROM AN LP's PERSPECTIVE on the investor (8-10 slides):
 1. title - firm name + one-line view as subtitle
-2. metrics - firm snapshot: HQ, founded, AUM or total raised, number of investments, exits, unicorns
+2. metrics - firm snapshot from the Dealroom profile: HQ / founded, investments.count, portfolio company count, investments.total_invested (label it "Round volume joined", it is NOT AUM), portfolio.total_valuation ("Combined portfolio value"), exits.count, typical cheque (deal_size)
 3. table - funds raised (fund name, vintage/year, size)
 4. table - portfolio and marks (notable portfolio companies, stage, last valuation or total funding)
-5. metrics - hit rate: unicorns, exits, share of portfolio
-6. chart - deal pace: investments per year (bar)
+5. metrics - hit rate: exits, portfolio unicorns and top marks (Dealroom first; see source rules)
+6. chart - deal pace: Dealroom deals per year (bar). Get it with dealroom_transactions, one call per year for the last 6 full years plus this year, ALL in one parallel turn: filter "and(investor_id[in_any]:<uuid>,year[eq]:YYYY)", limit 1, include_total true; y = page.total of each call
 7. bullets - sector and stage focus
 8. table - frequent co-investors
 9. people - partners and team
@@ -38,6 +38,10 @@ const INVESTOR_TEMPLATE = `Template: FUND DECK FROM AN LP's PERSPECTIVE on the i
 
 const RULES = `Rules:
 - Use ONLY numbers and facts that appear in tool results. Never invent or estimate figures.
+- Dealroom is the source of record. Any number Dealroom has must come from a Dealroom receipt, even if the web says otherwise. Use web results only for facts Dealroom lacks, and name the source in the tile note or bullet (e.g. "per TechCrunch").
+- A Dealroom field that is 0 or null means "Not recorded in Dealroom" - say exactly that rather than presenting it as a fact.
+- Currency: show amounts as Dealroom returns them. When a row has amount_source in another currency, show that original (e.g. "GBP 70M"). Never convert currencies or do FX math yourself. Pass currency "USD" to dealroom_company so profile totals are consistent.
+- Charts: every series is ONE homogeneous time series from ONE receipt, oldest to newest, x labels like "Mar 2024" or "2024". Never splice a profile snapshot onto a history as a fake latest point. If a list ends with "...N more", the remaining rows were cut; plot what you have and put the covered period in the chart title.
 - Every number or factual claim on a slide carries "receipts": the receipt ids (e.g. "r4") returned by the tools that support it.
 - If data is missing, say so on the slide (e.g. "Not disclosed in Dealroom") instead of inventing. Drop a slide only if there is nothing at all to show.
 - Format money compactly ("$12.5M", "EUR 40M") and dates as "Mar 2024".
