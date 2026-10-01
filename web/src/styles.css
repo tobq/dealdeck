@@ -478,3 +478,52 @@ button.sugg-card:disabled:not(.building) { opacity: 0.55; }
   .pl-tools { margin-left: auto; }
   .pl-review { display: none; }
 }
+
+/* Player view tabs (Presentation / Arguments / FAQ) */
+.pl-top { position: relative; }
+.pl-title { max-width: 30vw; }
+.pl-tabs { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: inline-flex; gap: 2px; padding: 3px; background: #eceef2; border-radius: 10px; }
+.pl-tab { height: 30px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.15s var(--ease), color 0.15s var(--ease); }
+.pl-tab:hover { color: var(--ink); }
+.pl-tab.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 1px 6px rgba(15, 23, 42, 0.06); }
+.av-root, .fq-root { width: min(100%, 980px); flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.av-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 12px; }
+.av-legend { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.av-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-left: 8px; }
+.av-dot-bull { background: var(--bull); margin-left: 0; }
+.av-dot-bear { background: var(--bear); }
+.av-ctrls { display: flex; align-items: center; gap: 6px; }
+.av-ctrls .btn { height: 38px; }
+.av-play { height: 38px; min-width: 96px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.av-play:disabled { opacity: 0.4; cursor: default; }
+.av-log { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 90px; }
+.av-line { max-width: 72%; display: flex; flex-direction: column; gap: 4px; text-align: left; font: inherit; font-size: 15px; line-height: 1.5; color: var(--ink); border: 1px solid transparent; border-radius: 16px; padding: 10px 14px; cursor: pointer; transition: box-shadow 0.15s var(--ease), border-color 0.15s var(--ease); animation: slideIn 0.25s var(--ease); }
+.av-bull { align-self: flex-start; background: var(--bull-soft); border-bottom-left-radius: 4px; }
+.av-bear { align-self: flex-end; background: var(--bear-soft); border-bottom-right-radius: 4px; }
+.av-line:hover { box-shadow: var(--shadow); }
+.av-who { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.av-bull .av-who { color: var(--bull); }
+.av-bear .av-who { color: var(--bear); }
+.av-bull.av-active { border-color: var(--bull); box-shadow: 0 0 0 3px rgba(15, 157, 99, 0.15); }
+.av-bear.av-active { border-color: var(--bear); box-shadow: 0 0 0 3px rgba(224, 57, 62, 0.15); }
+.av-empty { margin: auto; max-width: 440px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--ink-2); font-size: 14px; }
+.av-empty p { margin: 0; }
+.av-empty .btn { margin-top: 8px; }
+.av-empty-title { font-size: 20px; font-weight: 700; color: var(--ink); }
+.fq-root { overflow-y: auto; }
+.fq-list { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 90px; }
+.fq-card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; }
+.fq-q { display: flex; gap: 10px; align-items: baseline; font-weight: 700; font-size: 16px; line-height: 1.4; cursor: pointer; list-style: none; }
+.fq-q::-webkit-details-marker { display: none; }
+.fq-n { flex: none; font-size: 12px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.fq-a { margin: 10px 0 0 22px; font-size: 14.5px; line-height: 1.6; color: var(--ink-2); white-space: pre-wrap; }
+.fq-cite { display: inline-flex; align-items: center; height: 18px; margin: 0 2px; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-2); color: var(--accent); font: 600 11px/1 var(--mono); vertical-align: 1px; cursor: pointer; }
+.fq-cite:hover { border-color: var(--accent); }
+.fq-follow { margin: 10px 0 0 22px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.fq-follow:hover { text-decoration: underline; }
+.fq-foot { display: flex; justify-content: center; padding-top: 4px; }
+@media (max-width: 860px) {
+  .pl-tabs { position: static; transform: none; }
+  .pl-title { display: none; }
+  .av-line { max-width: 90%; }
+}

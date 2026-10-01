@@ -40,16 +40,17 @@ function toPcm16Base64(chunks: Float32Array[], inRate: number): string {
 
 const realWords = (t: string) => (t.match(/[\p{L}\p{N}]{2,}/gu) || []).length;
 
-async function sendChat(deckId: string, text: string) {
+async function sendChat(deckId: string, text: string, slideIndex?: number) {
   const r = await fetch('/api/decks/' + deckId + '/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, voice: true }),
+    body: JSON.stringify({ text, voice: true, ...(typeof slideIndex === 'number' ? { slideIndex } : {}) }),
   });
   if (!r.ok) throw new Error(`chat failed (${r.status})`);
 }
 
-export function useVoice(deckId: string) {
+/** getSlideIndex (optional): the slide the viewer is on, sent with each spoken question. */
+export function useVoice(deckId: string, getSlideIndex?: () => number) {
   const [micOn, setMicOn] = useState(false);
   const [muted, setMutedState] = useState(player.isMuted());
   const [speaking, setSpeaking] = useState(false);
@@ -59,6 +60,8 @@ export function useVoice(deckId: string) {
   const teardown = useRef<(() => void) | null>(null);
   const deckRef = useRef(deckId);
   deckRef.current = deckId;
+  const slideRef = useRef(getSlideIndex);
+  slideRef.current = getSlideIndex;
 
   useEffect(() => player.subscribe((s) => { setSpeaking(s.speaking); setMutedState(s.muted); if (s.speaking) setThinking(false); }), []);
   useEffect(() => bus.on('busy', (e) => { if (!e.busy) setThinking(false); }), []);
@@ -69,7 +72,7 @@ export function useVoice(deckId: string) {
     setPartial('');
     if (!realWords(t)) return;
     setThinking(true);
-    sendChat(deckRef.current, t).catch((e) => { setThinking(false); setError(e.message); });
+    sendChat(deckRef.current, t, slideRef.current?.()).catch((e) => { setThinking(false); setError(e.message); });
   }, []);
 
   const start = useCallback(async () => {

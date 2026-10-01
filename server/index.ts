@@ -3,10 +3,11 @@ import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import type { ChatBody, CreateDeckBody, ImportBody, SuggestBody } from '../shared/types.js';
-import { createSession, getSession, listRecent, subscribe, view } from './store.js';
+import { createSession, emit, getSession, listRecent, subscribe, view } from './store.js';
 import { resolveDealroomUrl, searchEntities } from './dealroom.js';
 import { ensureNarration, handleChat, startDeckBuild } from './agent.js';
 import { runDebate } from './debate.js';
+import { generateFaq } from './faq.js';
 import { registerVoiceRoutes } from './voice.js';
 import { registerShareRoutes } from './share.js';
 import { suggestCompanies } from './suggest.js';
@@ -84,11 +85,20 @@ app.get('/api/decks/:id/receipts/:rid', (req, res) => {
 app.post('/api/decks/:id/chat', h(async (req, res) => {
   const s = getSession(req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
-  const { text, voice } = req.body as ChatBody;
+  const { text, voice, slideIndex } = req.body as ChatBody;
   if (!text?.trim()) return res.status(400).json({ error: 'text required' });
   if (s.busy) return res.status(409).json({ error: 'busy' });
   res.status(202).json({ ok: true });
-  handleChat(s, text.trim(), { voice: !!voice }).catch((e) => console.error('[chat]', s.deck.id, e));
+  const idx = Number.isInteger(slideIndex) ? Number(slideIndex) : undefined;
+  handleChat(s, text.trim(), { voice: !!voice, slideIndex: idx }).catch((e) => console.error('[chat]', s.deck.id, e));
+}));
+
+app.post('/api/decks/:id/faq', h(async (req, res) => {
+  const s = getSession(req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  if (!s.deck.slides.length) return res.status(409).json({ error: 'deck has no slides yet' });
+  res.status(202).json({ ok: true });
+  generateFaq(s).catch((e) => { console.error('[faq]', s.deck.id, e); emit(s.deck.id, { type: 'error', message: `FAQ failed: ${e?.message ?? e}` }); });
 }));
 
 app.post('/api/decks/:id/fork', h(async (req, res) => {

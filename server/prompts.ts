@@ -16,7 +16,7 @@ Design the html like a world-class keynote designer, every slide composed for it
 - Citations: right after every number or factual claim put <sup class="cite" data-r="r4">r4</sup> (one sup per receipt id; several ids = several sups). Charts and tables get a caption "Source: <sup class="cite" data-r="r5">r5</sup>". Only cite receipt ids the tools returned.
 - Images: NO external images except Dealroom logo/photo urls (https) that appear in tool results, and on the title slide the cover art via the literal token {{COVER_IMAGE}} used ONLY as a CSS background, e.g. <div style="background:url('{{COVER_IMAGE}}') center/cover;...">. The server fills the token in when the art is ready (it may stay empty, so the slide must still look good without it). No other scripts, no fetch, no external CSS or fonts. Keep all <style> inside the fragment.`;
 
-const COMPANY_TEMPLATE = `Template: VC INVESTMENT MEMO on the company (8-10 slides):
+const COMPANY_TEMPLATE = `Angle MENU for a VC INVESTMENT MEMO on the company. This is NOT a required list or order: build the story THIS company deserves from what the data actually shows - drop angles with thin data, merge related ones, add angles the menu misses (a standout metric, a pivot, a key risk, a market map), and choose the slide count (typically 6-12). Always open with a title slide and close with sharp questions for the founder. Ideas, with the data source rules for each:
 1. title - company name + one-line thesis as subtitle
 2. metrics - snapshot from the Dealroom profile: total funding, last round (size, stage, date), valuation, revenue if Dealroom has it, HQ / founded, headcount (with its 1y growth)
 3. chart - funding history (bar, amount per round over time, unit e.g. "$M")
@@ -28,7 +28,7 @@ const COMPANY_TEMPLATE = `Template: VC INVESTMENT MEMO on the company (8-10 slid
 9. compare - Bull vs Bear (left heading "Bull", right heading "Bear")
 10. questions - questions for the founder`;
 
-const INVESTOR_TEMPLATE = `Template: FUND DECK FROM AN LP's PERSPECTIVE on the investor (8-10 slides):
+const INVESTOR_TEMPLATE = `Angle MENU for a FUND DECK FROM AN LP's PERSPECTIVE on the investor. NOT a required list or order: tell the story THIS firm deserves from the data - drop thin angles, merge, add what matters (a breakout winner, concentration risk, a strategy shift), and choose the slide count (typically 6-12). Always open with a title slide and close with sharp LP questions for the GP. Ideas, with the data source rules for each:
 1. title - firm name + one-line view as subtitle
 2. metrics - firm snapshot from the Dealroom profile: HQ / founded, investments.count, portfolio company count, investments.total_invested (label it "Round volume joined", it is NOT AUM), portfolio.total_valuation ("Combined portfolio value"), exits.count, typical cheque (deal_size)
 3. table - funds raised (fund name, vintage/year, size)
@@ -116,7 +116,7 @@ const STATUS_HINT = `Status: call set_status({text}) whenever your focus changes
 export function buildPlannerSystem(entity: DeckEntity, thesis?: string): string {
   return `${buildSystemPrompt(entity, thesis)}
 
-PLANNER mode (this turn): you are planning the deck, NOT writing slides. The standard Dealroom bundle is already pulled (below, with receipt ids). If something important is missing, make extra Dealroom or web lookups in ONE parallel turn (at most two), then call submit_outline. The outline has 8-10 slides following the template, each with a clear purpose, the key facts to show WITH their receipt ids, and a visual idea (vary layouts). Also write a shared style brief (layout grid and margins, type scale in px per role, accent colour use, chart style, citation style) so separate writers produce one cohesive deck. ${STATUS_HINT}`;
+PLANNER mode (this turn): you are planning the deck, NOT writing slides. The standard Dealroom bundle is already pulled (below, with receipt ids). If something important is missing, make extra Dealroom or web lookups in ONE parallel turn (at most two), then call submit_outline. The outline is YOUR story for this specific entity (typically 6-12 slides; use the angle menu as ideas, not a checklist, and lead with what is most interesting or decision-relevant), each with a clear purpose, the key facts to show WITH their receipt ids, and a visual idea (vary layouts). Also write a shared style brief (layout grid and margins, type scale in px per role, accent colour use, chart style, citation style) so separate writers produce one cohesive deck. ${STATUS_HINT}`;
 }
 
 export function buildPlannerKickoff(entity: DeckEntity, thesis: string | undefined, context: string): string {

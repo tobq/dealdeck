@@ -10,6 +10,8 @@ import { emit, save, setBusy, nowIso, shortId, type Session } from './store.js';
 import { buildSystemPrompt, buildDeckKickoff, BULL_BEAR_KICKOFF, NARRATION_KICKOFF, REVIEW_SYSTEM, buildReviewInput, buildReviewFix } from './prompts.js';
 import type { ChatMessage, Slide, SpeakVoice } from '../shared/types.js';
 import { runParallelBuild, fixSlidesParallel } from './build.js';
+import { slideText } from './debate.js';
+import { generateFaq } from './faq.js';
 
 /** Initial build path: 'parallel' (prefetch + planner + parallel writers) or 'serial' (one conversation). */
 const BUILD_MODE = (process.env.BUILD_MODE ?? 'parallel') === 'serial' ? 'serial' : 'parallel';
@@ -400,16 +402,27 @@ export async function startDeckBuild(s: Session): Promise<void> {
       save(s);
     }
   });
+  // Investor FAQ in the background once the deck is ready: never delays the deck.
+  if (s.deck.status === 'ready' && !s.deck.faq?.length) generateFaq(s).catch((err) => console.warn('[agent] faq failed:', err?.message ?? err));
 }
 
-export async function handleChat(s: Session, text: string, opts: { voice?: boolean } = {}): Promise<void> {
+/** A compact note telling the model which slide the viewer is looking at ("this slide" resolves to it). */
+function slideNote(s: Session, slideIndex?: number): string {
+  const n = s.deck.slides.length;
+  if (!Number.isInteger(slideIndex) || slideIndex! < 0 || slideIndex! >= n) return '';
+  const sl = s.deck.slides[slideIndex!];
+  const extract = slideText(sl).slice(0, 600);
+  return `(The viewer is on slide ${slideIndex! + 1} of ${n}: '${sl.title}' (id ${sl.id}). 'this slide' means that one. Its content: ${extract})\n`;
+}
+
+export async function handleChat(s: Session, text: string, opts: { voice?: boolean; slideIndex?: number } = {}): Promise<void> {
   const t = String(text ?? '').trim();
   if (!t) return;
   await exclusive(s, async () => {
     const user: ChatMessage = { id: shortId(8), role: 'user', text: t, at: nowIso() };
     s.chat.push(user);
     emit(s.deck.id, { type: 'chat', message: user });
-    await runTurn(s, opts.voice ? `(voice) ${t}` : t, { chat: true });
+    await runTurn(s, slideNote(s, opts.slideIndex) + (opts.voice ? `(voice) ${t}` : t), { chat: true });
   });
 }
 

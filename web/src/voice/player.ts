@@ -14,6 +14,8 @@ const queue: SpeechItem[] = [];
 let current: { item: SpeechItem; audio: HTMLAudioElement; done: () => void; ended: Promise<void> } | null = null;
 let prefetched: { id: string; audio: HTMLAudioElement } | null = null;
 let muted = false;
+/** While set, matching bus speech is dropped (the Arguments replay owns the audio). */
+let suppress: ((item: SpeechItem) => boolean) | null = null;
 const listeners = new Set<(s: PlayerState) => void>();
 
 const state = (): PlayerState => ({ speaking: !!current, item: current?.item ?? null, muted });
@@ -87,7 +89,7 @@ async function pump() {
 
 export const player = {
   enqueue(item: SpeechItem) {
-    if (muted || !item.text?.trim()) return;
+    if (muted || !item.text?.trim() || suppress?.(item)) return;
     queue.push(item);
     if (current) prefetchNext();
     void pump();
@@ -104,6 +106,8 @@ export const player = {
     if (muted || !text.trim()) return Promise.resolve();
     return playItem({ id: `say-${Date.now()}`, text, voice });
   },
+  /** Drop incoming queued speech matching pred (null = accept all again). */
+  setSuppress(pred: ((item: SpeechItem) => boolean) | null) { suppress = pred; },
   setMuted(m: boolean) { muted = m; if (m) player.stop(); notify(); },
   isMuted: () => muted,
   get: state,

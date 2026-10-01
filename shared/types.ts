@@ -69,6 +69,10 @@ export interface Deck {
   createdAt: string;
   updatedAt: string;
   forkOf?: string | null;
+  /** Investor FAQ: 8 sharp questions; a = markdown answer with inline [r3]-style receipt citations. */
+  faq?: Array<{ q: string; a: string }>;
+  /** The last Bull vs Bear transcript, filled line by line as it is spoken. */
+  debate?: Array<{ id: string; side: 'bull' | 'bear'; text: string }>;
 }
 
 export interface ChatMessage {
@@ -121,6 +125,7 @@ export interface SuggestResponse { thesisSummary: string; suggestions: Suggestio
 /** POST /api/import body: any Dealroom URL or path, e.g. "app.dealroom.co/companies/synthesia" */
 export interface ImportBody { url: string }
 /** POST /api/decks/:id/chat body */
-export interface ChatBody { text: string; voice?: boolean }
+/** POST /api/decks/:id/chat body. slideIndex = 0-based slide the viewer is on. */
+export interface ChatBody { text: string; voice?: boolean; slideIndex?: number }
 /** POST /api/share response */
 export interface ShareInfo { url: string; qrDataUrl: string }

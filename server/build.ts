@@ -71,7 +71,7 @@ async function plan(s: Session, context: string, deps: BuildDeps): Promise<{ out
   let outline: Outline | null = null;
   const submit: ToolDef = {
     name: 'submit_outline',
-    description: 'Submit the deck plan: title, shared style brief, and 8-10 slides in order. Call exactly once, when you have the data you need.',
+    description: 'Submit the deck plan: title, shared style brief, and the slides in order (as many as the story needs, typically 6-12). Call exactly once, when you have the data you need.',
     input_schema: {
       type: 'object',
       properties: {
@@ -98,7 +98,7 @@ async function plan(s: Session, context: string, deps: BuildDeps): Promise<{ out
     },
     async run(input) {
       const slides = parseJson(input.slides);
-      if (!Array.isArray(slides) || slides.length < 3) throw new Error('slides must be an array of 8-10 slides');
+      if (!Array.isArray(slides) || slides.length < 3) throw new Error('slides must be an array of at least 3 slides');
       const seen = new Set<string>();
       outline = {
         title: String(input.title ?? s.deck.entity.name),

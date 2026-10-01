@@ -5,6 +5,8 @@ import ReceiptPanel from '../components/ReceiptPanel';
 import ChatDock, { Md } from '../components/ChatDock';
 import { usePlayback } from '../components/PresentMode';
 import BullBear from '../components/BullBear';
+import ArgumentsView from '../components/ArgumentsView';
+import FaqView from '../components/FaqView';
 import ShareButton from '../components/ShareButton';
 import { useDeck } from '../lib/useDeck';
 import { bus } from '../lib/bus';
@@ -46,21 +48,28 @@ function Skeleton({ statusLog, name, slidesDone = 0 }: { statusLog: string[]; na
   );
 }
 
+export type PlayerTab = 'presentation' | 'arguments' | 'faq';
+const TABS: Array<{ id: PlayerTab; label: string }> = [{ id: 'presentation', label: 'Presentation' }, { id: 'arguments', label: 'Arguments' }, { id: 'faq', label: 'FAQ' }];
+
 const toggleFullscreen = () => {
   if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   else void document.documentElement.requestFullscreen?.().catch(() => {});
 };
 
 /** Play-first view: the slide, a quiet header and one control bar (play/pause, nav, talk, feedback). */
-function Player({ deck, current, setCurrent, playing, setPlaying, busy, building, status, statusLog, streaming, review, onCite, onEdit }: {
+function Player({ deck, current, setCurrent, playing, setPlaying, busy, building, status, statusLog, streaming, review, onCite, onEdit, tab, setTab }: {
   deck: Deck; current: number; setCurrent: (i: number) => void; playing: boolean; setPlaying: (p: boolean) => void;
   busy: boolean; building: boolean; status: string | null; statusLog: string[]; streaming: string; review: string | null;
-  onCite: (r: string) => void; onEdit: () => void;
+  onCite: (r: string) => void; onEdit: () => void; tab: PlayerTab; setTab: (t: PlayerTab) => void;
 }) {
   const slides = deck.slides;
   const slide = slides[current];
-  const v = useVoice(deck.id);
+  const curRef = useRef(current);
+  curRef.current = current;
+  const v = useVoice(deck.id, () => curRef.current);
   const [text, setText] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const askAbout = (q: string) => { setText(`Follow-up on "${q}": `); window.setTimeout(() => inputRef.current?.focus(), 0); };
   const [toast, setToast] = useState<string | null>(null);
   const [asked, setAsked] = useState(false);
 
@@ -84,7 +93,7 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
     setPlaying(false);
     setAsked(true);
     setToast(null);
-    const r = await fetch('/api/decks/' + deck.id + '/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: t }) }).catch(() => null);
+    const r = await fetch('/api/decks/' + deck.id + '/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: t, slideIndex: current }) }).catch(() => null);
     if (!r || !r.ok) { setAsked(false); setText(t); setToast(`Send failed${r ? ` (${r.status})` : ''}`); }
   };
 
@@ -100,18 +109,23 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
         {pending && <span className="pl-pill"><span className="pulse" />{building ? `Building... ${slides.length} slide${slides.length === 1 ? '' : 's'}` : 'Working'}{status ? ` · ${status}` : ''}</span>}
         {review && <span className="pl-review">{review}</span>}
         {deck.status === 'error' && !busy && <span className="tb-status tb-error">Build hit an error</span>}
+        <nav className="pl-tabs" role="tablist" aria-label="Deck views">
+          {TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={tab === t.id} className={`pl-tab${tab === t.id ? ' on' : ''}`} onClick={() => { if (t.id !== 'presentation') setPlaying(false); setTab(t.id); }}>{t.label}</button>
+          ))}
+        </nav>
       </header>
 
       <main className="pl-stage">
         {/* The reviewer may still rewrite slides, so the player stays on the loading screen until the deck is ready. */}
-        {slide && !building ? (
+        {tab === 'arguments' ? <ArgumentsView deck={deck} /> : tab === 'faq' ? <FaqView deck={deck} onCite={onCite} onAsk={askAbout} /> : slide && !building ? (
           <div className="pl-slide" key={slide.id}>
             <SlideView slide={slide} deck={deck} onCite={onCite} />
           </div>
         ) : (
           <Skeleton statusLog={review ? [...statusLog, review] : statusLog} name={deck.entity.name} slidesDone={slides.length} />
         )}
-        {playing && slide?.narration && !caption && <p className="pl-narration">{slide.narration}</p>}
+        {tab === 'presentation' && playing && slide?.narration && !caption && <p className="pl-narration">{slide.narration}</p>}
         {(caption || (asked && busy)) && (
           <div className="pl-toast" role="status">
             <div className="pl-toast-body">{caption ? <Md text={caption} /> : <span className="muted">Thinking...</span>}</div>
@@ -122,7 +136,7 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
       </main>
 
       <footer className="pl-bar">
-        <div className="pl-transport">
+        <div className="pl-transport" style={tab !== 'presentation' ? { visibility: 'hidden' } : undefined}>
           <button className="pl-ib" disabled={current === 0} onClick={() => setCurrent(Math.max(0, current - 1))} aria-label="Previous slide">{Ico.prev}</button>
           <button className="pl-play" disabled={!slides.length} onClick={() => setPlaying(!playing)} aria-label={playing ? 'Pause' : 'Play'} aria-pressed={playing}>{playing ? Ico.pause : Ico.play}</button>
           <button className="pl-ib" disabled={current >= slides.length - 1} onClick={() => setCurrent(Math.min(slides.length - 1, current + 1))} aria-label="Next slide">{Ico.next}</button>
@@ -130,10 +144,9 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
         </div>
         <form className="pl-ask" onSubmit={(e) => { e.preventDefault(); void send(); }}>
           <button type="button" className={`pl-talk${v.micOn ? ' on' : ''}`} onClick={v.toggleMic} aria-pressed={v.micOn} title={v.micOn ? 'Stop listening' : 'Talk to the analyst'}>{Ico.mic}<span>{v.micOn ? 'Listening' : 'Talk'}</span></button>
-          <input className="pl-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Give feedback or ask..." />
+          <input ref={inputRef} className="pl-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Give feedback or ask..." />
         </form>
         <div className="pl-tools">
-          <BullBear deckId={deck.id} />
           <ShareButton deckId={deck.id} />
           <button className="pl-ib" onClick={toggleFullscreen} title="Present fullscreen" aria-label="Present fullscreen">{Ico.full}</button>
           <button className="pl-ib" onClick={onEdit} title="Edit view" aria-label="Edit view">{Ico.edit}</button>
@@ -150,6 +163,7 @@ export default function DeckPage({ id }: { id: string }) {
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [mode, setMode] = useState<'play' | 'edit'>('play');
   const [playing, setPlaying] = useState(false);
+  const [tab, setTab] = useState<PlayerTab>('presentation');
   const [review, setReview] = useState<string | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -181,6 +195,7 @@ export default function DeckPage({ id }: { id: string }) {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target instanceof Element ? e.target : null;
       if (t?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (mode === 'play' && tab !== 'presentation') return;
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); setCurrentRaw((c) => Math.min(c + 1, slides.length - 1)); }
       else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); setCurrentRaw((c) => Math.max(c - 1, 0)); }
       else if (e.key === ' ' && mode === 'play') { e.preventDefault(); setPlaying((p) => !p); }
@@ -190,10 +205,10 @@ export default function DeckPage({ id }: { id: string }) {
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKeyUp); };
-  }, [slides.length, mode]);
+  }, [slides.length, mode, tab]);
 
   const closeReceipt = useCallback(() => setReceiptId(null), []);
-  const present = () => { setMode('play'); setPlaying(true); toggleFullscreen(); };
+  const present = () => { setMode('play'); setTab('presentation'); setPlaying(true); toggleFullscreen(); };
 
   if (!view || !deck) {
     return (
@@ -218,7 +233,7 @@ export default function DeckPage({ id }: { id: string }) {
         <Player
           deck={deck} current={current} setCurrent={setCurrent} playing={playing} setPlaying={setPlaying}
           busy={busy} building={building} status={status} statusLog={statusLog} streaming={streaming} review={review}
-          onCite={setReceiptId} onEdit={() => { setPlaying(false); setMode('edit'); }}
+          onCite={setReceiptId} onEdit={() => { setPlaying(false); setMode('edit'); }} tab={tab} setTab={setTab}
         />
         <ReceiptPanel receiptId={receiptId} deckId={deck.id} onClose={closeReceipt} />
       </>

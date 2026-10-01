@@ -3,19 +3,21 @@
 // the other side is already preparing its reply.
 import { cpMessage } from './cp.js';
 import { emit, nowIso, save, setBusy, shortId, type Session } from './store.js';
-import type { SpeakVoice } from '../shared/types.js';
+import type { Slide, SpeakVoice } from '../shared/types.js';
 
 const ROUNDS = 3; // each side speaks 3 times
 
-const stripHtml = (h: string) => h.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<script[\s\S]*?<\/script>/gi, ' ')
+export const stripHtml = (h: string) => h.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<script[\s\S]*?<\/script>/gi, ' ')
   .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 
-/** The deck as plain text: what both debaters argue from. */
-function deckBrief(s: Session): string {
-  return s.deck.slides.map((sl, i) => {
-    const body = sl.html ? stripHtml(sl.html) : JSON.stringify({ ...sl, id: undefined, narration: undefined });
-    return `Slide ${i + 1} - ${sl.title}: ${body.slice(0, 1500)}`;
-  }).join('\n');
+/** One slide as plain text (html stripped, or the structured fields). */
+export function slideText(sl: Slide): string {
+  return sl.html ? stripHtml(sl.html) : JSON.stringify({ ...sl, id: undefined, narration: undefined, html: undefined });
+}
+
+/** The deck as plain text: what both debaters (and the FAQ writer) argue from. */
+export function deckBrief(s: Session, perSlide = 1500): string {
+  return s.deck.slides.map((sl, i) => `Slide ${i + 1} - ${sl.title}: ${slideText(sl).slice(0, perSlide)}`).join('\n');
 }
 
 const PERSONA: Record<'bull' | 'bear', string> = {
@@ -47,6 +49,8 @@ export async function runDebate(s: Session): Promise<void> {
   if (s.busy) { emit(s.deck.id, { type: 'error', message: 'Busy - try again in a moment.' }); return; }
   setBusy(s, true);
   const transcript: Array<{ side: 'bull' | 'bear'; text: string }> = [];
+  s.deck.debate = []; // the deck keeps only the latest debate
+  emit(s.deck.id, { type: 'deck', deck: s.deck });
   try {
     emit(s.deck.id, { type: 'status', text: 'Bull and Bear are preparing...' });
     for (let i = 0; i < ROUNDS * 2; i++) {
@@ -54,7 +58,11 @@ export async function runDebate(s: Session): Promise<void> {
       const text = await line(side, s, transcript, i >= ROUNDS * 2 - 2);
       if (!text) continue;
       transcript.push({ side, text });
-      emit(s.deck.id, { type: 'speak', id: shortId(8), text, voice: side as SpeakVoice });
+      const id = shortId(8);
+      emit(s.deck.id, { type: 'speak', id, text, voice: side as SpeakVoice });
+      (s.deck.debate ??= []).push({ id, side, text });
+      emit(s.deck.id, { type: 'deck', deck: s.deck });
+      save(s);
     }
     const summary = transcript.map((t) => `**${t.side === 'bull' ? 'Bull' : 'Bear'}:** ${t.text}`).join('\n');
     const msg = { id: shortId(8), role: 'assistant' as const, text: `Bull vs Bear debate\n${summary}`, at: nowIso() };
