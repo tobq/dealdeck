@@ -179,16 +179,11 @@ export function useVoice(deckId: string, getSlideIndex?: () => number) {
     }
   }, [commitText]);
 
-  // Stopping the mic is "stop": end the speech and cancel the in-flight or queued answer too.
-  const toggleMic = useCallback(() => {
-    if (!teardown.current) { void start(); return; }
-    teardown.current();
-    player.stop();
-    setThinking(false);
-    void fetch('/api/decks/' + deckRef.current + '/cancel', { method: 'POST' }).catch(() => {});
-  }, [start]);
+  // Turning the mic off only stops LISTENING ("I'm done talking"): a question already sent keeps running and is still answered.
+  const toggleMic = useCallback(() => { if (teardown.current) teardown.current(); else void start(); }, [start]);
   const toggleMute = useCallback(() => player.setMuted(!player.isMuted()), []);
 
-  const state: VoiceState = !micOn ? (speaking ? 'speaking' : 'idle') : speaking ? 'speaking' : thinking ? 'thinking' : 'listening';
+  // The analyst's state shows whether or not the mic is on: muting the mic never hides that it is still answering.
+  const state: VoiceState = speaking ? 'speaking' : thinking ? 'thinking' : micOn ? 'listening' : 'idle';
   return { micOn, toggleMic, muted, toggleMute, state, partial, error };
 }

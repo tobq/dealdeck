@@ -239,16 +239,25 @@ async function runTurn(s: Session, userText: string, opts: TurnOpts): Promise<st
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
       let firstDelta = true;
-      const r = await cpMessage({
-        system, messages: s.messages, tools: apiTools, shardKey: deckId,
-        onText: (d) => {
-          let piece = d;
-          if (firstDelta && written) piece = '\n\n' + d;
-          firstDelta = false;
-          written += piece;
-          if (opts.chat) emit(deckId, { type: 'assistant_delta', text: piece });
-        },
-      });
+      let r;
+      try {
+        r = await cpMessage({
+          system, messages: s.messages, tools: apiTools, shardKey: deckId, signal: turnAbort.get(s)?.signal,
+          onText: (d) => {
+            let piece = d;
+            if (firstDelta && written) piece = '\n\n' + d;
+            firstDelta = false;
+            written += piece;
+            if (opts.chat) emit(deckId, { type: 'assistant_delta', text: piece });
+          },
+        });
+      } catch (e) {
+        if (!isCancelled(s)) throw e;
+        // Stopped mid-answer: keep what was said so the thread stays honest and its roles keep alternating.
+        if (written.trim()) written += '\n\n(Stopped.)';
+        s.messages.push({ role: 'assistant', content: [{ type: 'text', text: written.trim() || '(Stopped by the viewer before answering.)' }] });
+        break;
+      }
       const content = cleanAssistant(r.content);
       if (!content.length) break;
       s.messages.push({ role: 'assistant', content });
@@ -444,10 +453,11 @@ function slideNote(s: Session, slideIndex?: number): string {
 }
 
 // ---------- stop / cancel ----------
-const cancelled = new WeakSet<Session>();
-const isCancelled = (s: Session) => cancelled.has(s);
-/** The viewer pressed stop: the running turn ends at its next step and speaks nothing more. */
-export function cancelTurn(s: Session) { if (s.busy) cancelled.add(s); }
+// One controller per viewer question: aborting it cuts the in-flight model call and skips every later step.
+const turnAbort = new WeakMap<Session, AbortController>();
+const isCancelled = (s: Session) => !!turnAbort.get(s)?.signal.aborted;
+/** The viewer pressed stop: the running answer ends now and speaks nothing more. */
+export function cancelTurn(s: Session) { turnAbort.get(s)?.abort(); }
 
 /**
  * Everything the viewer can see, as compact text: every slide, the debate and the FAQ. Injected into the
@@ -481,11 +491,15 @@ export async function handleChat(s: Session, text: string, opts: { voice?: boole
   const t = String(text ?? '').trim();
   if (!t) return;
   await exclusive(s, async () => {
-    cancelled.delete(s); // a new question starts un-cancelled
+    turnAbort.set(s, new AbortController());
     const user: ChatMessage = { id: shortId(8), role: 'user', text: t, at: nowIso() };
     s.chat.push(user);
     emit(s.deck.id, { type: 'chat', message: user });
-    await runTurn(s, viewNote(s, opts) + (opts.voice ? `(voice) ${t}` : t), { chat: true });
+    try {
+      await runTurn(s, viewNote(s, opts) + (opts.voice ? `(voice) ${t}` : t), { chat: true });
+    } finally {
+      turnAbort.delete(s);
+    }
   });
 }
 

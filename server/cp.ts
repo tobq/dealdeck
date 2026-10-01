@@ -8,6 +8,8 @@ export interface CpRequest {
   shardKey: string;
   onText?: (delta: string) => void;
   maxTokens?: number;
+  /** Aborting it ends the call at once (the viewer pressed stop); an abort is never retried. */
+  signal?: AbortSignal;
 }
 export interface CpResult { content: ContentBlock[]; stopReason: string | null; model?: string }
 
@@ -49,8 +51,10 @@ async function once(req: CpRequest, fallback: boolean): Promise<CpResult> {
         'x-shard-key': req.shardKey,
       },
       body: JSON.stringify(body),
+      signal: req.signal,
     });
   } catch (e: any) {
+    if (req.signal?.aborted) throw e;
     throw new RetryableError(`network: ${e?.message ?? e}`);
   }
   if (!res.ok || !res.body) {
@@ -109,6 +113,7 @@ async function once(req: CpRequest, fallback: boolean): Promise<CpResult> {
   for (;;) {
     let chunk: ReadableStreamReadResult<Uint8Array>;
     try { chunk = await reader.read(); } catch (e: any) {
+      if (req.signal?.aborted) throw e;
       if (!blocks.length) throw new RetryableError(`network: ${e?.message ?? e}`);
       throw e;
     }
