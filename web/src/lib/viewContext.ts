@@ -1,6 +1,7 @@
 // Where the viewer is right now (page + what they last focused). Every chat message carries it, so the
 // one analyst thread can resolve "this", "that point" or "explain that" across Presentation, Arguments and FAQ.
-export type ViewPage = 'presentation' | 'arguments' | 'faq';
+import type { DeckPageName } from '../../../shared/types';
+export type ViewPage = DeckPageName;
 
 export const viewContext: { page: ViewPage; focus: string } = { page: 'presentation', focus: '' };
 

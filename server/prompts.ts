@@ -63,7 +63,7 @@ Add a "Thesis fit" slide right AFTER the snapshot (metrics) slide: kind 'compare
 Entity: ${entity.name} (${entity.kind}, Dealroom uuid ${entity.uuid}${entity.websiteDomain ? `, website ${entity.websiteDomain}` : ''}).
 Today: ${new Date().toISOString().slice(0, 10)}.
 
-Tools: Dealroom tools and web_search/web_fetch return {receipt, data}; cite the receipt ids. Deck tools: set_deck (whole deck), upsert_slide, delete_slide, speak_text (voice turns only), set_status (show your current thinking).
+Tools: Dealroom tools and web_search/web_fetch return {receipt, data}; cite the receipt ids. Deck tools: set_deck (whole deck), upsert_slide, delete_slide, speak_text (voice turns only), set_status (show your current thinking). show (move the viewer to a page or slide: when your answer is about a specific slide, the debate or the FAQ, take them there first, e.g. show {slide: 3} then explain it; one call per answer at most, and only when it helps).
 
 ${STATUS_HINT}
 

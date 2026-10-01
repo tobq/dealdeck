@@ -8,7 +8,7 @@ import { generateCoverImage } from './twoshot.js';
 import { screenshotSlides, toImageBlocks } from './screenshot.js';
 import { emit, save, setBusy, nowIso, shortId, type Session } from './store.js';
 import { buildSystemPrompt, buildDeckKickoff, BULL_BEAR_KICKOFF, NARRATION_KICKOFF, REVIEW_SYSTEM, buildReviewInput, buildReviewFix } from './prompts.js';
-import type { ChatMessage, Slide, SpeakVoice } from '../shared/types.js';
+import { DECK_PAGES, type ChatMessage, type DeckPageName, type Slide, type SpeakVoice } from '../shared/types.js';
 import { runParallelBuild, fixSlidesParallel } from './build.js';
 import { slideText } from './debate.js';
 import { generateFaq } from './faq.js';
@@ -180,6 +180,25 @@ const deckTools: ToolDef[] = [
       const list = spokenThisTurn.get(s.deck.id);
       if (list) list.push(voice === 'narrator' ? text : `${voice}: ${text}`);
       return 'ok';
+    },
+  },
+  {
+    name: 'show',
+    description: 'Guide the viewer: move their screen to a page and/or slide while you talk ("let me show you the funding chart"). page: presentation | arguments | faq. slide: 1-based slide number or slide id (implies the presentation page). Call it BEFORE you explain the thing you are pointing at.',
+    input_schema: { type: 'object', properties: { page: { type: 'string', enum: [...DECK_PAGES] }, slide: { type: ['integer', 'string'] } } },
+    async run(input, ctx) {
+      const s = ctx.session;
+      let slideIndex: number | undefined;
+      if (typeof input.slide === 'number') slideIndex = input.slide - 1;
+      else if (typeof input.slide === 'string') {
+        const byId = s.deck.slides.findIndex((x) => x.id === input.slide);
+        slideIndex = byId >= 0 ? byId : (/^\d+$/.test(input.slide) ? Number(input.slide) - 1 : undefined);
+      }
+      if (slideIndex !== undefined && (slideIndex < 0 || slideIndex >= s.deck.slides.length)) throw new Error(`no slide ${input.slide}; the deck has ${s.deck.slides.length}`);
+      const page = slideIndex !== undefined ? 'presentation' : (DECK_PAGES.includes(input.page) ? (input.page as DeckPageName) : undefined);
+      if (!page) throw new Error('give a page or a slide');
+      emit(s.deck.id, { type: 'navigate', page, ...(slideIndex !== undefined ? { slideIndex } : {}) });
+      return `showing ${page}${slideIndex !== undefined ? ` slide ${slideIndex + 1}: ${s.deck.slides[slideIndex].title}` : ''}`;
     },
   },
 ];

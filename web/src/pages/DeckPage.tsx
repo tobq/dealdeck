@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Deck } from '../../../shared/types';
+import type { Deck, DeckPageName } from '../../../shared/types';
 import SlideView from '../components/SlideView';
 import ReceiptPanel from '../components/ReceiptPanel';
 import ChatDock, { Md } from '../components/ChatDock';
@@ -49,7 +49,7 @@ function Skeleton({ statusLog, name, slidesDone = 0 }: { statusLog: string[]; na
   );
 }
 
-export type PlayerTab = 'presentation' | 'arguments' | 'faq';
+export type PlayerTab = DeckPageName;
 const TABS: Array<{ id: PlayerTab; label: string }> = [{ id: 'presentation', label: 'Presentation' }, { id: 'arguments', label: 'Arguments' }, { id: 'faq', label: 'FAQ' }];
 
 const toggleFullscreen = () => {
@@ -182,6 +182,11 @@ export default function DeckPage({ id }: { id: string }) {
   const busy = !!view?.busy;
   const building = deck?.status === 'building';
   const setCurrent = useCallback((i: number) => setCurrentRaw(i), []);
+  // The analyst can guide the viewer: its `show` tool switches page and/or slide.
+  useEffect(() => bus.on('navigate', (e) => {
+    setTab(e.page);
+    if (typeof e.slideIndex === 'number') { setPlaying(false); setCurrentRaw(e.slideIndex); }
+  }), []);
 
   useEffect(() => { if (current > slides.length - 1) setCurrentRaw(Math.max(0, slides.length - 1)); }, [slides.length, current]);
   useEffect(() => { if (deck) document.title = `${deck.title || deck.entity.name} - Dealdeck`; return () => { document.title = 'Dealdeck'; }; }, [deck?.title, deck?.entity.name]);

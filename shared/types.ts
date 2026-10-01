@@ -101,7 +101,12 @@ export type DeckEvent =
   | { type: 'chat'; message: ChatMessage } // a finished user or assistant message
   | { type: 'speak'; id: string; text: string; voice: SpeakVoice; interject?: boolean }
   | { type: 'review'; iteration: number; notes: string[]; done: boolean } // reviewer loop progress
+  | { type: 'navigate'; page: DeckPageName; slideIndex?: number } // the analyst guides the viewer's screen (show tool)
   | { type: 'error'; message: string };
+
+/** The deck player's pages. One definition shared by chat context, navigation and the UI. */
+export type DeckPageName = 'presentation' | 'arguments' | 'faq';
+export const DECK_PAGES: readonly DeckPageName[] = ['presentation', 'arguments', 'faq'];
 
 /** POST /api/decks body. `thesis` (optional) adds a "Thesis fit" slide to company decks. */
 export interface CreateDeckBody { uuid: string; kind: EntityKind; name: string; thesis?: string }
@@ -126,6 +131,6 @@ export interface SuggestResponse { thesisSummary: string; suggestions: Suggestio
 export interface ImportBody { url: string }
 /** POST /api/decks/:id/chat body */
 /** POST /api/decks/:id/chat body. slideIndex = 0-based slide the viewer is on. */
-export interface ChatBody { text: string; voice?: boolean; slideIndex?: number; view?: 'presentation' | 'arguments' | 'faq'; focus?: string }
+export interface ChatBody { text: string; voice?: boolean; slideIndex?: number; view?: DeckPageName; focus?: string }
 /** POST /api/share response */
 export interface ShareInfo { url: string; qrDataUrl: string }
