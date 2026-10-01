@@ -97,7 +97,8 @@ export function publicBaseUrl(): Promise<string> {
 }
 
 export async function shareInfoFor(base: string, deckId: string): Promise<ShareInfo> {
-  const url = `${base.replace(/\/+$/, '')}/d/${encodeURIComponent(deckId)}`;
+  // ?shared=1: each viewer is forked into a private copy on open (DeckPage), so the owner's deck is never edited.
+  const url = `${base.replace(/\/+$/, '')}/d/${encodeURIComponent(deckId)}?shared=1`;
   const qrDataUrl = await QRCode.toDataURL(url, {
     margin: 1,
     width: 512,

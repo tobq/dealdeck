@@ -159,6 +159,14 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
 
 export default function DeckPage({ id }: { id: string }) {
   const { view, streaming, status, statusLog, error } = useDeck(id);
+  // Shared links (?shared=1): every viewer gets their own private copy, so their questions never edit the owner's deck.
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has('shared')) return;
+    fetch('/api/decks/' + encodeURIComponent(id) + '/fork', { method: 'POST' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j?.id) navigate('/d/' + j.id, true); })
+      .catch(() => {});
+  }, [id]);
   const [current, setCurrentRaw] = useState(0);
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [mode, setMode] = useState<'play' | 'edit'>('play');
