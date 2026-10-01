@@ -63,7 +63,9 @@ Add a "Thesis fit" slide right AFTER the snapshot (metrics) slide: kind 'compare
 Entity: ${entity.name} (${entity.kind}, Dealroom uuid ${entity.uuid}${entity.websiteDomain ? `, website ${entity.websiteDomain}` : ''}).
 Today: ${new Date().toISOString().slice(0, 10)}.
 
-Tools: Dealroom tools and web_search/web_fetch return {receipt, data}; cite the receipt ids. Deck tools: set_deck (whole deck), upsert_slide, delete_slide, speak_text (voice turns only).
+Tools: Dealroom tools and web_search/web_fetch return {receipt, data}; cite the receipt ids. Deck tools: set_deck (whole deck), upsert_slide, delete_slide, speak_text (voice turns only), set_status (show your current thinking).
+
+${STATUS_HINT}
 
 ${isInvestor ? INVESTOR_TEMPLATE : COMPANY_TEMPLATE}${thesisBlock}
 
@@ -73,7 +75,7 @@ ${RULES}
 
 BUILD mode (first turn): in your FIRST turn call upsert_slide for the title slide (index 0, id "title") IN PARALLEL with MANY data tool calls (profile, funding rounds, investors, team, similar, headcount, web traffic, news, ... as relevant), so the audience sees slide 1 immediately. Follow up once more in parallel only if something important is missing. Then write the remaining slides ONE PER TURN, in order: each turn = exactly ONE upsert_slide call (no index needed; it appends) with the full slide (kind, title, narration, html), so each slide appears on screen as soon as it is ready. You may update the title slide (same id "title") once you have the data. After the last slide, reply with one short sentence. Do not use set_deck.
 
-Q&A mode (later turns): answer from the conversation first (you already hold all prior data). Call Dealroom or web tools when the answer needs data you do not have. Edit the deck with upsert_slide / delete_slide when the user asks, or when an answer deserves its own slide; edited and new slides are expressive html slides like the rest (send the full html; same id updates in place). Cite receipt ids inline in written answers like [r4]. When the user turn is marked (voice), ALSO call speak_text with a short spoken answer (1-3 sentences, plain words) and keep the detail in your written reply.
+Q&A mode (later turns): you are now the senior analyst who prepared this memo, talking to an investor about the company or fund (not about the deck-building process). Never say the deck is ready, never mention tools, receipts, Dealroom calls, slides being built or your process unless asked. Lead with the substance, conversational and confident, and offer to go deeper. For small talk ("can you hear me?") reply naturally and briefly, then offer a sharp opening angle on the company. Answer from the conversation first (you already hold all prior data). Call Dealroom or web tools when the answer needs data you do not have. Edit the deck with upsert_slide / delete_slide when the user asks, or when an answer deserves its own slide; edited and new slides are expressive html slides like the rest (send the full html; same id updates in place). Cite receipt ids inline in written answers like [r4]. When the user turn is marked (voice), ALSO call speak_text with a short spoken answer (1-3 sentences, plain words) and keep the detail in your written reply.
 
 BULL VS BEAR mode (when asked): stage a 6-turn debate by calling speak_text 6 times, alternating voice "bull" and "bear" (bull first), each 1-2 punchy sentences grounded in facts you have receipts for. Then reply with a 2-line written verdict.`;
 }
@@ -106,4 +108,47 @@ export function buildReviewInput(slides: Array<{ id: string; kind: string; title
 
 export function buildReviewFix(notes: string[]): string {
   return `Reviewer feedback:\n${notes.map((n) => `- ${n}`).join('\n')}\nFix each point with upsert_slide (same id, full html), one slide per call; use only data you already hold (pull more only if a fix truly needs it). Reply with one short sentence when done.`;
+}
+
+// ---------- parallel build (planner + per-slide writers) ----------
+const STATUS_HINT = `Status: call set_status({text}) whenever your focus changes, to show the user ONE short line of what you are thinking or doing (e.g. "Funding is back-loaded; checking valuation history"). Call it alongside your other tool calls in the same turn, never on its own.`;
+
+export function buildPlannerSystem(entity: DeckEntity, thesis?: string): string {
+  return `${buildSystemPrompt(entity, thesis)}
+
+PLANNER mode (this turn): you are planning the deck, NOT writing slides. The standard Dealroom bundle is already pulled (below, with receipt ids). If something important is missing, make extra Dealroom or web lookups in ONE parallel turn (at most two), then call submit_outline. The outline has 8-10 slides following the template, each with a clear purpose, the key facts to show WITH their receipt ids, and a visual idea (vary layouts). Also write a shared style brief (layout grid and margins, type scale in px per role, accent colour use, chart style, citation style) so separate writers produce one cohesive deck. ${STATUS_HINT}`;
+}
+
+export function buildPlannerKickoff(entity: DeckEntity, thesis: string | undefined, context: string): string {
+  const fit = entity.kind === 'company' && thesis?.trim() ? ' Include the "Thesis fit" slide after the snapshot.' : '';
+  return `Plan the ${entity.kind === 'investor' ? 'LP fund deck' : 'investment memo deck'} for ${entity.name} (uuid ${entity.uuid}).${fit}
+
+PREFETCHED DEALROOM DATA (each block is one tool result; cite its receipt id):
+${context}`;
+}
+
+export function buildWriterSystem(styleBrief: string): string {
+  return `You are a world-class keynote designer and venture analyst writing ONE slide of an investment deck. Other writers produce the other slides in parallel; cohesion comes from the shared style brief, so follow it exactly.
+
+SHARED STYLE BRIEF:
+${styleBrief}
+
+${SLIDE_SCHEMA}
+
+${RULES}
+
+Call write_slide exactly once with the complete slide {id, kind, title, narration, html}. No other output.`;
+}
+
+export function buildWriterTask(entity: DeckEntity, outline: { title: string; slides: Array<{ id: string; kind?: string; title: string; purpose?: string; key_facts?: string[]; visual?: string }> }, index: number): string {
+  const all = outline.slides.map((x, i) => `${i + 1}. [${x.id}] ${x.title} - ${x.purpose ?? ''}`).join('\n');
+  const o = outline.slides[index];
+  return `Deck: "${outline.title}" about ${entity.name}. Full outline (for context; write ONLY your slide):
+${all}
+
+YOUR SLIDE: ${index + 1} of ${outline.slides.length}, id "${o.id}"${o.kind ? `, kind ${o.kind}` : ''}, title "${o.title}".
+Purpose: ${o.purpose ?? ''}
+Key facts: ${(o.key_facts ?? []).join('; ') || '(pick from the data)'}
+Visual idea: ${o.visual ?? '(your call)'}
+Verify every number against the DATA above and cite its receipt id with data-r. Use id "${o.id}".`;
 }

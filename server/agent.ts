@@ -9,6 +9,10 @@ import { screenshotSlides, toImageBlocks } from './screenshot.js';
 import { emit, save, setBusy, nowIso, shortId, type Session } from './store.js';
 import { buildSystemPrompt, buildDeckKickoff, BULL_BEAR_KICKOFF, NARRATION_KICKOFF, REVIEW_SYSTEM, buildReviewInput, buildReviewFix } from './prompts.js';
 import type { ChatMessage, Slide, SpeakVoice } from '../shared/types.js';
+import { runParallelBuild, fixSlidesParallel } from './build.js';
+
+/** Initial build path: 'parallel' (prefetch + planner + parallel writers) or 'serial' (one conversation). */
+const BUILD_MODE = (process.env.BUILD_MODE ?? 'parallel') === 'serial' ? 'serial' : 'parallel';
 
 const MAX_ROUNDS = 26; // build = data rounds + one round per streamed slide
 const MAX_REVIEWS = 2;
@@ -86,7 +90,19 @@ const slideSchema = {
   required: ['kind', 'title'],
 };
 
+const statusTool: ToolDef = {
+  name: 'set_status',
+  description: 'Show the user ONE short line of what you are currently thinking or doing (e.g. "Funding is back-loaded; checking valuation history"). Call it alongside other tool calls.',
+  input_schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+  async run(input, ctx) {
+    const text = String(input.text ?? '').trim().slice(0, 160);
+    if (text) emit(ctx.session.deck.id, { type: 'status', text });
+    return 'ok';
+  },
+};
+
 const deckTools: ToolDef[] = [
+  statusTool,
   {
     name: 'set_deck',
     description: 'Replace the WHOLE deck with these slides (use once, after pulling data). Each slide needs narration and receipts ids on every number.',
@@ -217,7 +233,9 @@ async function runTurn(s: Session, userText: string, opts: TurnOpts): Promise<st
       save(s);
       const toolUses = content.filter((b) => b.type === 'tool_use') as unknown as ToolUseBlock[];
       if (!toolUses.length) break; // stop_reason end_turn / max_tokens with no calls
-      ctx.status(statusLine(toolUses));
+      // set_status (the model's own line) wins over the generic tool summary.
+      const line = toolUses.some((u) => u.name === 'set_status') ? '' : statusLine(toolUses);
+      if (line) ctx.status(line);
       const results = await runToolBatch(tools, toolUses, ctx);
       s.messages.push({ role: 'user', content: results });
       save(s);
@@ -243,6 +261,8 @@ const LABELS: Array<[RegExp, string]> = [
   [/web_search|web_fetch/, 'the web'], [/set_deck|upsert_slide|delete_slide/, 'the deck'],
 ];
 function statusLine(uses: ToolUseBlock[]): string {
+  uses = uses.filter((u) => u.name !== 'set_status');
+  if (!uses.length) return '';
   if (uses.every((u) => u.name === 'speak_text')) return 'Speaking...';
   const parts = new Set<string>();
   for (const u of uses.filter((x) => x.name !== 'speak_text')) {
@@ -305,7 +325,7 @@ async function reviewDeck(s: Session): Promise<string[]> {
   return parseNotes(text);
 }
 
-async function reviewLoop(s: Session) {
+async function reviewLoop(s: Session, parallelFix = false) {
   for (let iteration = 1; iteration <= MAX_REVIEWS; iteration++) {
     emit(s.deck.id, { type: 'status', text: iteration === 1 ? 'Reviewing the deck...' : 'Re-reviewing the deck...' });
     let notes: string[];
@@ -318,7 +338,8 @@ async function reviewLoop(s: Session) {
     emit(s.deck.id, { type: 'review', iteration, notes, done });
     if (done) return;
     emit(s.deck.id, { type: 'status', text: `Applying ${notes.length} reviewer fix${notes.length === 1 ? '' : 'es'}...` });
-    await runTurn(s, buildReviewFix(notes), { chat: false });
+    const rest = parallelFix ? await fixSlidesParallel(s, notes, { statusTool, slideSchema, normSlide }).catch(() => notes) : notes;
+    if (rest.length) await runTurn(s, buildReviewFix(rest), { chat: false });
   }
 }
 
@@ -344,7 +365,21 @@ export async function startDeckBuild(s: Session): Promise<void> {
       generateCoverImage(prompt).then((url) => { if (url) applyCover(s, url); }).catch((err) => console.warn('[agent] cover failed:', err?.message ?? err));
     }
     try {
-      await runTurn(s, buildDeckKickoff(e, s.thesis), { chat: true });
+      let parallelOk = false;
+      if (BUILD_MODE === 'parallel') {
+        const saved = s.messages.slice();
+        try {
+          await runParallelBuild(s, buildDeckKickoff(e, s.thesis), { statusTool, slideSchema, normSlide });
+          parallelOk = true;
+        } catch (err: any) {
+          console.warn('[agent] parallel build failed, falling back to serial:', err?.message ?? err);
+          s.messages = saved;
+          s.deck.slides = [];
+          emit(s.deck.id, { type: 'deck', deck: s.deck });
+          emit(s.deck.id, { type: 'status', text: 'Switching to step-by-step build...' });
+        }
+      }
+      if (!parallelOk) await runTurn(s, buildDeckKickoff(e, s.thesis), { chat: true });
       if (s.deck.slides.length < 3) {
         emit(s.deck.id, { type: 'status', text: 'Writing the deck...' });
         await runTurn(s, 'The deck is not finished. Write the remaining slides NOW, one upsert_slide per turn in order, using only the data you already pulled (say "not disclosed" where data is missing).', { chat: false });
@@ -354,7 +389,7 @@ export async function startDeckBuild(s: Session): Promise<void> {
         emit(s.deck.id, { type: 'error', message: 'The agent did not produce any slides.' });
       } else {
         // Stay 'building' through the review loop: the player shows the loading screen until reviewed.
-        await reviewLoop(s);
+        await reviewLoop(s, parallelOk);
         s.deck.status = 'ready';
       }
     } catch (err) {
