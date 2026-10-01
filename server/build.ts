@@ -121,6 +121,7 @@ async function plan(s: Session, context: string, deps: BuildDeps): Promise<{ out
   const extra: string[] = [];
   for (let round = 0; round < MAX_PLANNER_ROUNDS && !outline; round++) {
     const last = round === MAX_PLANNER_ROUNDS - 1;
+    emit(s.deck.id, { type: 'status', text: round === 0 ? 'Planning the story...' : last ? 'Finalising the outline...' : 'Checking extra data...' });
     if (last) messages[messages.length - 1].content.push({ type: 'text', text: 'Last round: call submit_outline NOW with what you have.' });
     const r = await cpMessage({ system, messages, tools: apiTools, shardKey: `${s.deck.id}-plan`, maxTokens: 12000 });
     const content = r.content.filter((b) => !(b.type === 'text' && !String(b.text ?? '').trim()));
@@ -174,7 +175,7 @@ export async function runParallelBuild(s: Session, kickoff: string, deps: BuildD
   rememberBuild(s, data, outline);
   const placed: Array<Slide | null> = outline.slides.map(() => null);
   let done = 0;
-  const settled = await Promise.allSettled(outline.slides.map(async (_, i) => {
+  const writeOne = async (i: number) => {
     const raw = await writeSlide(s, outline, i, data, deps);
     placed[i] = deps.normSlide(raw, s, outline.slides[i].id);
     done++;
@@ -183,8 +184,20 @@ export async function runParallelBuild(s: Session, kickoff: string, deps: BuildD
     emit(deckId, { type: 'status', text: `Slide ${i + 1} of ${outline.slides.length} written (${done}/${outline.slides.length} done)` });
     if (done === 1) console.log(`[build] ${deckId} first slide at ${Date.now() - t0}ms`);
     save(s);
-  }));
-  const failed = settled.filter((x) => x.status === 'rejected').length;
+  };
+  const rejectedIdx = (st: PromiseSettledResult<void>[], idx: number[], pass: string) => idx.filter((i, k) => {
+    const r = st[k];
+    if (r.status !== 'rejected') return false;
+    console.warn(`[build] ${deckId} writer ${i + 1} (${outline.slides[i].id}) rejected (${pass}):`, (r.reason as any)?.message ?? r.reason);
+    return true;
+  });
+  const all = outline.slides.map((_, i) => i);
+  const retry = rejectedIdx(await Promise.allSettled(all.map(writeOne)), all, 'first try');
+  let failed = 0;
+  if (retry.length) {
+    emit(deckId, { type: 'status', text: `Retrying ${retry.length} slide${retry.length === 1 ? '' : 's'}...` });
+    failed = rejectedIdx(await Promise.allSettled(retry.map(writeOne)), retry, 'retry').length;
+  }
   console.log(`[build] ${deckId} slides written ${done}/${outline.slides.length} at ${Date.now() - t0}ms`);
   if (done < Math.min(3, outline.slides.length)) throw new Error(`only ${done} slides written`);
 

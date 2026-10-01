@@ -12,6 +12,7 @@ import { useDeck } from '../lib/useDeck';
 import { bus } from '../lib/bus';
 import { navigate } from '../lib/api';
 import { useVoice } from '../voice/useVoice';
+import { setViewFocus, setViewPage, viewFields } from '../lib/viewContext';
 
 const Ico = {
   prev: <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>,
@@ -69,7 +70,7 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
   const v = useVoice(deck.id, () => curRef.current);
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const askAbout = (q: string) => { setText(`Follow-up on "${q}": `); window.setTimeout(() => inputRef.current?.focus(), 0); };
+  const askAbout = (q: string) => { setViewFocus(`FAQ question: ${q}`); setText(`Follow-up on "${q}": `); window.setTimeout(() => inputRef.current?.focus(), 0); };
   const [toast, setToast] = useState<string | null>(null);
   const [asked, setAsked] = useState(false);
 
@@ -93,7 +94,7 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
     setPlaying(false);
     setAsked(true);
     setToast(null);
-    const r = await fetch('/api/decks/' + deck.id + '/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: t, slideIndex: current }) }).catch(() => null);
+    const r = await fetch('/api/decks/' + deck.id + '/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: t, slideIndex: current, ...viewFields() }) }).catch(() => null);
     if (!r || !r.ok) { setAsked(false); setText(t); setToast(`Send failed${r ? ` (${r.status})` : ''}`); }
   };
 
@@ -111,7 +112,7 @@ function Player({ deck, current, setCurrent, playing, setPlaying, busy, building
         {deck.status === 'error' && !busy && <span className="tb-status tb-error">Build hit an error</span>}
         <nav className="pl-tabs" role="tablist" aria-label="Deck views">
           {TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id} className={`pl-tab${tab === t.id ? ' on' : ''}`} onClick={() => { if (t.id !== 'presentation') setPlaying(false); setTab(t.id); }}>{t.label}</button>
+            <button key={t.id} role="tab" aria-selected={tab === t.id} className={`pl-tab${tab === t.id ? ' on' : ''}`} onClick={() => { if (t.id !== 'presentation') setPlaying(false); setTab(t.id); setViewPage(t.id); }}>{t.label}</button>
           ))}
         </nav>
       </header>
@@ -172,6 +173,7 @@ export default function DeckPage({ id }: { id: string }) {
   const [mode, setMode] = useState<'play' | 'edit'>('play');
   const [playing, setPlaying] = useState(false);
   const [tab, setTab] = useState<PlayerTab>('presentation');
+  useEffect(() => { setViewPage(tab); }, [tab]); // keeps the analyst's view context in sync however the tab changes
   const [review, setReview] = useState<string | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
 

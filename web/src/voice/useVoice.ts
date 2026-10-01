@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { bus } from '../lib/bus';
 import { player } from './player';
+import { viewFields } from '../lib/viewContext';
 
 export type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 const RATE = 16000;
@@ -44,7 +45,7 @@ async function sendChat(deckId: string, text: string, slideIndex?: number) {
   const r = await fetch('/api/decks/' + deckId + '/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, voice: true, ...(typeof slideIndex === 'number' ? { slideIndex } : {}) }),
+    body: JSON.stringify({ text, voice: true, ...viewFields(), ...(typeof slideIndex === 'number' ? { slideIndex } : {}) }),
   });
   if (!r.ok) throw new Error(`chat failed (${r.status})`);
 }

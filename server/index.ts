@@ -85,12 +85,33 @@ app.get('/api/decks/:id/receipts/:rid', (req, res) => {
 app.post('/api/decks/:id/chat', h(async (req, res) => {
   const s = getSession(req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
-  const { text, voice, slideIndex } = req.body as ChatBody;
+  const { text, voice, slideIndex, view, focus } = req.body as ChatBody;
   if (!text?.trim()) return res.status(400).json({ error: 'text required' });
-  if (s.busy) return res.status(409).json({ error: 'busy' });
-  res.status(202).json({ ok: true });
   const idx = Number.isInteger(slideIndex) ? Number(slideIndex) : undefined;
-  handleChat(s, text.trim(), { voice: !!voice, slideIndex: idx }).catch((e) => console.error('[chat]', s.deck.id, e));
+  const msg = { text: text.trim(), voice: !!voice, slideIndex: idx, view, focus: typeof focus === 'string' ? focus.slice(0, 400) : undefined };
+  if (s.busy) {
+    // Queue instead of refusing (latest wins); one waiter per session sends it once the current turn ends.
+    const q = s as any;
+    q.pendingChat = msg;
+    res.status(202).json({ queued: true });
+    if (!q.chatWaiter) {
+      q.chatWaiter = true;
+      const started = Date.now();
+      const tick = () => {
+        if (s.busy && Date.now() - started < 90_000) { setTimeout(tick, 300); return; }
+        q.chatWaiter = false;
+        const p = q.pendingChat;
+        q.pendingChat = undefined;
+        if (!p) return;
+        if (s.busy) { console.error('[chat] queued message dropped: still busy after 90s', s.deck.id); return; }
+        handleChat(s, p.text, { voice: p.voice, slideIndex: p.slideIndex, view: p.view, focus: p.focus }).catch((e) => console.error('[chat]', s.deck.id, e));
+      };
+      setTimeout(tick, 300);
+    }
+    return;
+  }
+  res.status(202).json({ ok: true });
+  handleChat(s, msg.text, { voice: msg.voice, slideIndex: msg.slideIndex, view: msg.view, focus: msg.focus }).catch((e) => console.error('[chat]', s.deck.id, e));
 }));
 
 app.post('/api/decks/:id/faq', h(async (req, res) => {
@@ -98,7 +119,7 @@ app.post('/api/decks/:id/faq', h(async (req, res) => {
   if (!s) return res.status(404).json({ error: 'not found' });
   if (!s.deck.slides.length) return res.status(409).json({ error: 'deck has no slides yet' });
   res.status(202).json({ ok: true });
-  generateFaq(s).catch((e) => { console.error('[faq]', s.deck.id, e); emit(s.deck.id, { type: 'error', message: `FAQ failed: ${e?.message ?? e}` }); });
+  generateFaq(s).catch((e) => { console.error('[faq]', s.deck.id, e); emit(s.deck.id, { type: 'error', message: "Couldn't write the FAQ, try again." }); });
 }));
 
 app.post('/api/decks/:id/fork', h(async (req, res) => {

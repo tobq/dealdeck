@@ -336,12 +336,14 @@ async function reviewLoop(s: Session, parallelFix = false) {
       emit(s.deck.id, { type: 'review', iteration, notes: [], done: true });
       return;
     }
-    const done = !notes.length || iteration >= MAX_REVIEWS;
-    emit(s.deck.id, { type: 'review', iteration, notes, done });
-    if (done) return;
+    const last = iteration >= MAX_REVIEWS;
+    emit(s.deck.id, { type: 'review', iteration, notes, done: !notes.length });
+    if (!notes.length) return;
     emit(s.deck.id, { type: 'status', text: `Applying ${notes.length} reviewer fix${notes.length === 1 ? '' : 'es'}...` });
     const rest = parallelFix ? await fixSlidesParallel(s, notes, { statusTool, slideSchema, normSlide }).catch(() => notes) : notes;
     if (rest.length) await runTurn(s, buildReviewFix(rest), { chat: false });
+    // The final pass's notes are applied too; then stop without another review.
+    if (last) { emit(s.deck.id, { type: 'review', iteration, notes: [], done: true }); return; }
   }
 }
 
@@ -415,14 +417,22 @@ function slideNote(s: Session, slideIndex?: number): string {
   return `(The viewer is on slide ${slideIndex! + 1} of ${n}: '${sl.title}' (id ${sl.id}). 'this slide' means that one. Its content: ${extract})\n`;
 }
 
-export async function handleChat(s: Session, text: string, opts: { voice?: boolean; slideIndex?: number } = {}): Promise<void> {
+/** Where the viewer is: one analyst thread across Presentation, Arguments and FAQ, so 'this' / 'that point' resolve. */
+function viewNote(s: Session, opts: { slideIndex?: number; view?: string; focus?: string }): string {
+  const focus = opts.focus ? ` They last focused on ${opts.focus}.` : '';
+  if (opts.view === 'arguments') return `(The viewer is on the Arguments page: the Bull vs Bear debate.${focus} 'that point' refers to it.)\n`;
+  if (opts.view === 'faq') return `(The viewer is on the FAQ page.${focus})\n`;
+  return slideNote(s, opts.slideIndex) + (focus ? `(${focus.trim()})\n` : '');
+}
+
+export async function handleChat(s: Session, text: string, opts: { voice?: boolean; slideIndex?: number; view?: string; focus?: string } = {}): Promise<void> {
   const t = String(text ?? '').trim();
   if (!t) return;
   await exclusive(s, async () => {
     const user: ChatMessage = { id: shortId(8), role: 'user', text: t, at: nowIso() };
     s.chat.push(user);
     emit(s.deck.id, { type: 'chat', message: user });
-    await runTurn(s, slideNote(s, opts.slideIndex) + (opts.voice ? `(voice) ${t}` : t), { chat: true });
+    await runTurn(s, viewNote(s, opts) + (opts.voice ? `(voice) ${t}` : t), { chat: true });
   });
 }
 

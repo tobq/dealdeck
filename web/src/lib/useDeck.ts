@@ -39,7 +39,8 @@ export function applyEvent(st: DeckState, e: DeckEvent): DeckState {
       if (!st.view) return st;
       return { ...st, view: { ...st.view, receipts: [...st.view.receipts.filter((r) => r.id !== e.receipt.id), e.receipt] } };
     case 'busy':
-      return st.view ? { ...st, view: { ...st.view, busy: e.busy }, status: e.busy ? st.status : null } : st;
+      // A new turn starting clears any stale error banner.
+      return st.view ? { ...st, view: { ...st.view, busy: e.busy }, status: e.busy ? st.status : null, error: e.busy ? null : st.error } : st;
     case 'chat': {
       if (!st.view) return st;
       const chat = [...st.view.chat.filter((m) => m.id !== e.message.id), e.message];
@@ -60,6 +61,12 @@ export function useDeck(id: string): DeckState {
   const [state, setState] = useState<DeckState>(initial);
   const idRef = useRef(id);
   idRef.current = id;
+  // Errors are transient notices, never a banner pinned for the rest of the session.
+  useEffect(() => {
+    if (!state.error || !state.view) return;
+    const t = window.setTimeout(() => setState((st) => ({ ...st, error: null })), 8000);
+    return () => clearTimeout(t);
+  }, [state.error, state.view]);
 
   useEffect(() => {
     setState(initial);

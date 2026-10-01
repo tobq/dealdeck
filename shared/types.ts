@@ -126,6 +126,6 @@ export interface SuggestResponse { thesisSummary: string; suggestions: Suggestio
 export interface ImportBody { url: string }
 /** POST /api/decks/:id/chat body */
 /** POST /api/decks/:id/chat body. slideIndex = 0-based slide the viewer is on. */
-export interface ChatBody { text: string; voice?: boolean; slideIndex?: number }
+export interface ChatBody { text: string; voice?: boolean; slideIndex?: number; view?: 'presentation' | 'arguments' | 'faq'; focus?: string }
 /** POST /api/share response */
 export interface ShareInfo { url: string; qrDataUrl: string }

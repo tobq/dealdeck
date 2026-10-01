@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Deck } from '../../../shared/types';
 import { bus } from '../lib/bus';
 import { player } from '../voice/player';
+import { setViewFocus } from '../lib/viewContext';
 
 type Line = { id: string; side: 'bull' | 'bear'; text: string };
 
@@ -28,6 +29,14 @@ export default function ArgumentsView({ deck }: { deck: Deck }) {
     setLive((ls) => (ls.some((l) => l.id === e.id) ? ls : [...ls, { id: e.id, side: e.voice as 'bull' | 'bear', text: e.text }]));
   }), []);
   useEffect(() => { if (stored.length) setStarting(false); }, [stored.length]);
+  // A debate that fails or yields no lines must not leave the spinner up forever.
+  useEffect(() => bus.on('busy', (e) => {
+    if (e.busy) return;
+    setStarting((was) => {
+      if (was && !linesRef.current.length) setErr('The debate did not start, try again.');
+      return false;
+    });
+  }), []);
   useEffect(() => player.subscribe((s) => setLiveId(s.item?.id ?? null)), []);
   useEffect(() => { if (!replaying) logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' }); }, [lines.length, replaying]);
   useEffect(() => {
@@ -103,7 +112,7 @@ export default function ArgumentsView({ deck }: { deck: Deck }) {
           </div>
         )}
         {lines.map((l, i) => (
-          <button key={l.id} data-line={i} className={`av-line av-${l.side}${i === cur ? ' av-active' : ''}`} onClick={() => void playFrom(i)} title="Play from here">
+          <button key={l.id} data-line={i} className={`av-line av-${l.side}${i === cur ? ' av-active' : ''}`} onClick={() => { setViewFocus(`the ${l.side === 'bull' ? 'Bull' : 'Bear'} point: ${l.text}`); void playFrom(i); }} title="Play from here">
             <span className="av-who">{l.side === 'bull' ? 'Bull' : 'Bear'}</span>
             <span className="av-text">{l.text}</span>
           </button>

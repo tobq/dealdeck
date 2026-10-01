@@ -87,7 +87,7 @@ export default function Landing() {
 
       <main className="landing-main">
         <h1 className="hero-title">Dealdeck</h1>
-        <p className="hero-tagline">Any company or fund, as an investor deck, in seconds.</p>
+        <p className="hero-tagline">Any company or fund, as a reviewed investor deck from live Dealroom data. Then talk to it.</p>
 
         <div className={`search ${open && hits.length ? 'search-open' : ''}`}>
           <svg className="search-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">

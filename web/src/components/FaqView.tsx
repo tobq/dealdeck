@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Deck } from '../../../shared/types';
 import { Md } from './ChatDock';
+import { bus } from '../lib/bus';
 
 const CITE = /\[(r\d+(?:\s*,\s*r\d+)*)\]/g;
 
@@ -26,6 +27,13 @@ export default function FaqView({ deck, onCite, onAsk }: { deck: Deck; onCite: (
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => { if (deck.faq?.length) setPending(false); }, [deck.faq]);
+  // A failed run reports via an error event; also never spin longer than 90s.
+  useEffect(() => bus.on('error', () => setPending(false)), []);
+  useEffect(() => {
+    if (!pending) return;
+    const t = window.setTimeout(() => { setPending(false); setErr('The FAQ is taking too long, try again.'); }, 90000);
+    return () => clearTimeout(t);
+  }, [pending]);
 
   const generate = async () => {
     setErr(null);
@@ -33,6 +41,12 @@ export default function FaqView({ deck, onCite, onAsk }: { deck: Deck; onCite: (
     const r = await fetch('/api/decks/' + deck.id + '/faq', { method: 'POST' }).catch(() => null);
     if (!r || !r.ok) { setPending(false); setErr(`Could not generate the FAQ${r ? ` (${r.status})` : ''}`); }
   };
+
+  // Opening the tab on a ready deck without an FAQ starts writing it straight away (no button needed).
+  useEffect(() => {
+    if (!deck.faq?.length && deck.status === 'ready') void generate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deck.id]);
 
   if (!faq.length) {
     return (

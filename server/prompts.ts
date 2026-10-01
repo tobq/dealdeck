@@ -17,28 +17,28 @@ Design the html like a world-class keynote designer, every slide composed for it
 - Images: NO external images except Dealroom logo/photo urls (https) that appear in tool results, and on the title slide the cover art via the literal token {{COVER_IMAGE}} used ONLY as a CSS background, e.g. <div style="background:url('{{COVER_IMAGE}}') center/cover;...">. The server fills the token in when the art is ready (it may stay empty, so the slide must still look good without it). No other scripts, no fetch, no external CSS or fonts. Keep all <style> inside the fragment.`;
 
 const COMPANY_TEMPLATE = `Angle MENU for a VC INVESTMENT MEMO on the company. This is NOT a required list or order: build the story THIS company deserves from what the data actually shows - drop angles with thin data, merge related ones, add angles the menu misses (a standout metric, a pivot, a key risk, a market map), and choose the slide count (typically 6-12). Always open with a title slide and close with sharp questions for the founder. Ideas, with the data source rules for each:
-1. title - company name + one-line thesis as subtitle
-2. metrics - snapshot from the Dealroom profile: total funding, last round (size, stage, date), valuation, revenue if Dealroom has it, HQ / founded, headcount (with its 1y growth)
-3. chart - funding history (bar, amount per round over time, unit e.g. "$M")
-4. table or people - key investors (lead investors, notable funds)
-5. people - founders and team
-6. chart - traction: monthly web visits from the web_traffic section (line, one point per month, latest 12-24 months you can see)
-7. table - competitive landscape: similar companies (name, HQ, total funding, last round)
-8. bullets - news and signals (recent events, hires, launches)
-9. compare - Bull vs Bear (left heading "Bull", right heading "Bear")
-10. questions - questions for the founder`;
+- title - company name + one-line thesis as subtitle
+- metrics - snapshot from the Dealroom profile: total funding, last round (size, stage, date), valuation, revenue if Dealroom has it, HQ / founded, headcount (with its 1y growth)
+- chart - funding history (bar, amount per round over time, unit e.g. "$M")
+- table or people - key investors (lead investors, notable funds)
+- people - founders and team
+- chart - traction: monthly web visits from the web_traffic section (line, one point per month, latest 12-24 months you can see)
+- table - competitive landscape: similar companies (name, HQ, total funding, last round)
+- bullets - news and signals (recent events, hires, launches)
+- compare - Bull vs Bear (left heading "Bull", right heading "Bear")
+- questions - questions for the founder`;
 
 const INVESTOR_TEMPLATE = `Angle MENU for a FUND DECK FROM AN LP's PERSPECTIVE on the investor. NOT a required list or order: tell the story THIS firm deserves from the data - drop thin angles, merge, add what matters (a breakout winner, concentration risk, a strategy shift), and choose the slide count (typically 6-12). Always open with a title slide and close with sharp LP questions for the GP. Ideas, with the data source rules for each:
-1. title - firm name + one-line view as subtitle
-2. metrics - firm snapshot from the Dealroom profile: HQ / founded, investments.count, portfolio company count, investments.total_invested (label it "Round volume joined", it is NOT AUM), portfolio.total_valuation ("Combined portfolio value"), exits.count, typical cheque (deal_size)
-3. table - funds raised (fund name, vintage/year, size)
-4. table - portfolio and marks (notable portfolio companies, stage, last valuation or total funding)
-5. metrics - hit rate: exits, portfolio unicorns and top marks (Dealroom first; see source rules)
-6. chart - deal pace: Dealroom deals per year (bar). Get it with dealroom_transactions, one call per year for the last 6 full years plus this year, ALL in one parallel turn: filter "and(investor_id[in_any]:<uuid>,year[eq]:YYYY)", limit 1, include_total true; y = page.total of each call
-7. bullets - sector and stage focus
-8. table - frequent co-investors
-9. people - partners and team
-10. questions - LP questions for the GP`;
+- title - firm name + one-line view as subtitle
+- metrics - firm snapshot from the Dealroom profile: HQ / founded, investments.count, portfolio company count, investments.total_invested (label it "Round volume joined", it is NOT AUM), portfolio.total_valuation ("Combined portfolio value"), exits.count, typical cheque (deal_size)
+- table - funds raised (fund name, vintage/year, size)
+- table - portfolio and marks (notable portfolio companies, stage, last valuation or total funding)
+- metrics - hit rate: exits, portfolio unicorns and top marks (Dealroom first; see source rules)
+- chart - deal pace: Dealroom deals per year (bar). Get it with dealroom_transactions, one call per year for the last 6 full years plus this year, ALL in one parallel turn: filter "and(investor_id[in_any]:<uuid>,year[eq]:YYYY)", limit 1, include_total true; y = page.total of each call
+- bullets - sector and stage focus
+- table - frequent co-investors
+- people - partners and team
+- questions - LP questions for the GP`;
 
 const RULES = `Rules:
 - Use ONLY numbers and facts that appear in tool results. Never invent or estimate figures.
@@ -75,9 +75,7 @@ ${RULES}
 
 BUILD mode (first turn): in your FIRST turn call upsert_slide for the title slide (index 0, id "title") IN PARALLEL with MANY data tool calls (profile, funding rounds, investors, team, similar, headcount, web traffic, news, ... as relevant), so the audience sees slide 1 immediately. Follow up once more in parallel only if something important is missing. Then write the remaining slides ONE PER TURN, in order: each turn = exactly ONE upsert_slide call (no index needed; it appends) with the full slide (kind, title, narration, html), so each slide appears on screen as soon as it is ready. You may update the title slide (same id "title") once you have the data. After the last slide, reply with one short sentence. Do not use set_deck.
 
-Q&A mode (later turns): you are now the senior analyst who prepared this memo, talking to an investor about the company or fund (not about the deck-building process). Never say the deck is ready, never mention tools, receipts, Dealroom calls, slides being built or your process unless asked. Lead with the substance, conversational and confident, and offer to go deeper. For small talk ("can you hear me?") reply naturally and briefly, then offer a sharp opening angle on the company. Answer from the conversation first (you already hold all prior data). Call Dealroom or web tools when the answer needs data you do not have. Edit the deck with upsert_slide / delete_slide when the user asks, or when an answer deserves its own slide; edited and new slides are expressive html slides like the rest (send the full html; same id updates in place). Cite receipt ids inline in written answers like [r4]. When the user turn is marked (voice), ALSO call speak_text with a short spoken answer (1-3 sentences, plain words) and keep the detail in your written reply.
-
-BULL VS BEAR mode (when asked): stage a 6-turn debate by calling speak_text 6 times, alternating voice "bull" and "bear" (bull first), each 1-2 punchy sentences grounded in facts you have receipts for. Then reply with a 2-line written verdict.`;
+Q&A mode (later turns): you are now the senior analyst who prepared this memo, talking to an investor about the company or fund (not about the deck-building process). Never say the deck is ready, never mention tools, receipts, Dealroom calls, slides being built or your process unless asked. Lead with the substance, conversational and confident, and offer to go deeper. For small talk ("can you hear me?") reply naturally and briefly, then offer a sharp opening angle on the company. Answer from the conversation first (you already hold all prior data). Call Dealroom or web tools when the answer needs data you do not have. Edit the deck with upsert_slide / delete_slide when the user asks, or when an answer deserves its own slide; edited and new slides are expressive html slides like the rest (send the full html; same id updates in place). Cite receipt ids inline in written answers like [r4]. When the user turn is marked (voice), ALSO call speak_text with a short spoken answer (1-3 sentences, plain words) and keep the detail in your written reply.`;
 }
 
 export function buildDeckKickoff(entity: DeckEntity, thesis?: string): string {
@@ -97,7 +95,7 @@ Return ONLY JSON: {"notes": ["<slide id>: <concrete fix>", ...]}. Max 8 notes, m
 - a number that a receipt excerpt clearly contradicts, or a number/claim with no data-r citation, or a data-r id that is not in the receipt list (receipt excerpts are truncated: do not flag a number just because it is beyond the excerpt)
 - an unclear or missing message, a slide that says nothing
 - cluttered or broken layout: text likely to overflow 1920x1080 (too many words, more than 6 rows, small fonts), overlapping elements, an empty or mis-scaled chart, unreadable labels
-- a key slide of the template missing (e.g. funding history, team, competition, bull vs bear, questions)
+- a decision-critical angle the data clearly supports is missing (only if the story needs it)
 Do not nitpick wording or taste. If the deck is good, return {"notes": []}.`;
 
 export function buildReviewInput(slides: Array<{ id: string; kind: string; title: string; html?: string }>, receipts: Array<{ id: string; endpoint: string; params: unknown; excerpt: string }>): string {
@@ -116,7 +114,7 @@ const STATUS_HINT = `Status: call set_status({text}) whenever your focus changes
 export function buildPlannerSystem(entity: DeckEntity, thesis?: string): string {
   return `${buildSystemPrompt(entity, thesis)}
 
-PLANNER mode (this turn): you are planning the deck, NOT writing slides. The standard Dealroom bundle is already pulled (below, with receipt ids). If something important is missing, make extra Dealroom or web lookups in ONE parallel turn (at most two), then call submit_outline. The outline is YOUR story for this specific entity (typically 6-12 slides; use the angle menu as ideas, not a checklist, and lead with what is most interesting or decision-relevant), each with a clear purpose, the key facts to show WITH their receipt ids, and a visual idea (vary layouts). Also write a shared style brief (layout grid and margins, type scale in px per role, accent colour use, chart style, citation style) so separate writers produce one cohesive deck. ${STATUS_HINT}`;
+PLANNER mode (this turn): you are planning the deck, NOT writing slides. The BUILD / Q&A / BULL VS BEAR mode instructions above do NOT apply in planner mode: you only plan and call submit_outline. The standard Dealroom bundle is already pulled (below, with receipt ids). If something important is missing, make extra Dealroom or web lookups in ONE parallel turn (at most two), then call submit_outline. The outline is YOUR story for this specific entity (typically 6-12 slides; use the angle menu as ideas, not a checklist, and lead with what is most interesting or decision-relevant), each with a clear purpose, the key facts to show WITH their receipt ids, and a visual idea (vary layouts). Also write a shared style brief (layout grid and margins, type scale in px per role, accent colour use, chart style, citation style) so separate writers produce one cohesive deck. ${STATUS_HINT}`;
 }
 
 export function buildPlannerKickoff(entity: DeckEntity, thesis: string | undefined, context: string): string {

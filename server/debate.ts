@@ -1,6 +1,7 @@
 // Bull vs Bear: two independent agents, each with its own persona and private reasoning, debating
-// the deck turn by turn. Every line is emitted (and starts playing) as soon as it is written, while
-// the other side is already preparing its reply.
+// whether to invest in the company (or fund), turn by turn. Lines are written sequentially: each side
+// replies only after hearing the other's last line, and every line is emitted (and starts playing) as
+// soon as it is written.
 import { cpMessage } from './cp.js';
 import { emit, nowIso, save, setBusy, shortId, type Session } from './store.js';
 import type { Slide, SpeakVoice } from '../shared/types.js';
@@ -27,11 +28,12 @@ const PERSONA: Record<'bull' | 'bear', string> = {
 
 function system(side: 'bull' | 'bear', s: Session): string {
   const e = s.deck.entity;
+  const subject = e.kind === 'investor' ? `the fund ${e.name}` : `the company ${e.name}`;
   return `${PERSONA[side]}
-You are in a live, spoken investment-committee debate about ${e.name} (${e.kind}), in front of an audience.
-Rules: reply with ONE spoken line of 1-2 short sentences (under 40 words), punchy and conversational, no lists, no markdown, no citations or receipt ids, no stage directions. Ground every claim in the deck facts below; never invent numbers. Directly rebut the other side's last point when there is one; do not repeat yourself. Think privately first if useful, then output only the line.
+You are in a live, spoken investment-committee debate, in front of an audience, about whether to invest in ${subject}. Argue about the business and the investment decision, never about the deck or its slides.
+Rules: reply with ONE spoken line of 1-2 short sentences (under 40 words), punchy and conversational, no lists, no markdown, no citations or receipt ids, no stage directions. Ground every claim in the research facts below; never invent numbers. Directly rebut the other side's last point when there is one; do not repeat yourself. Think privately first if useful, then output only the line.
 
-DECK FACTS:
+RESEARCH FACTS:
 ${deckBrief(s)}`;
 }
 
@@ -55,7 +57,9 @@ export async function runDebate(s: Session): Promise<void> {
     emit(s.deck.id, { type: 'status', text: 'Bull and Bear are preparing...' });
     for (let i = 0; i < ROUNDS * 2; i++) {
       const side: 'bull' | 'bear' = i % 2 === 0 ? 'bull' : 'bear';
-      const text = await line(side, s, transcript, i >= ROUNDS * 2 - 2);
+      const final = i >= ROUNDS * 2 - 2;
+      let text = await line(side, s, transcript, final);
+      if (!text) text = await line(side, s, transcript, final); // one retry (e.g. an empty reply or refusal)
       if (!text) continue;
       transcript.push({ side, text });
       const id = shortId(8);
@@ -68,12 +72,13 @@ export async function runDebate(s: Session): Promise<void> {
     const msg = { id: shortId(8), role: 'assistant' as const, text: `Bull vs Bear debate\n${summary}`, at: nowIso() };
     s.chat.push(msg);
     // Keep the analyst's conversation aware of the debate for later questions.
-    s.messages.push({ role: 'user', content: [{ type: 'text', text: `(The audience just heard this Bull vs Bear debate about the deck:)\n${summary}` }] });
+    s.messages.push({ role: 'user', content: [{ type: 'text', text: `(The audience just heard this Bull vs Bear debate about ${s.deck.entity.name}:)\n${summary}` }] });
     s.messages.push({ role: 'assistant', content: [{ type: 'text', text: 'Noted the debate.' }] });
     emit(s.deck.id, { type: 'chat', message: msg });
     save(s);
   } catch (err: any) {
-    emit(s.deck.id, { type: 'error', message: `Debate failed: ${err?.message ?? err}` });
+    console.error('[bullbear]', s.deck.id, err?.message ?? err);
+    emit(s.deck.id, { type: 'error', message: 'The debate hit a snag, try again.' });
   } finally {
     setBusy(s, false);
   }
